@@ -2,8 +2,11 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
     DateTime,
     ForeignKey,
+    Identity,
     Index,
     Integer,
     String,
@@ -122,6 +125,37 @@ class PassportProgressModel(Base):
     )
 
 
+class CodeBatchModel(Base):
+    __tablename__ = "code_batches"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    city: Mapped[str] = mapped_column(String(2), nullable=False)
+    label: Mapped[str] = mapped_column(String(200), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    coins_per_code: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    activated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    voided_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    __table_args__ = (
+        CheckConstraint("quantity > 0", name="ck_code_batches_quantity_positive"),
+        CheckConstraint(
+            "coins_per_code >= 0", name="ck_code_batches_coins_non_negative"
+        ),
+        CheckConstraint(
+            "status IN ('generated', 'active', 'void')",
+            name="ck_code_batches_status",
+        ),
+    )
+
+
 class RedemptionCodeModel(Base):
     __tablename__ = "redemption_codes"
 
@@ -137,5 +171,63 @@ class RedemptionCodeModel(Base):
     redeemed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+    batch_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("code_batches.id", ondelete="RESTRICT"), nullable=True
+    )
 
-    __table_args__ = (Index("ix_redemption_codes_city", "city"),)
+    __table_args__ = (
+        Index("ix_redemption_codes_city", "city"),
+        Index("ix_redemption_codes_batch_id", "batch_id"),
+        Index(
+            "ix_redemption_codes_redeemer_time",
+            "redeemed_by_user_id",
+            "redeemed_at",
+            postgresql_where="redeemed_by_user_id IS NOT NULL",
+        ),
+    )
+
+
+class WalletModel(Base):
+    __tablename__ = "wallets"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="RESTRICT"), primary_key=True
+    )
+    balance: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    lifetime_earned: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint("balance >= 0", name="ck_wallets_balance_non_negative"),
+        CheckConstraint(
+            "lifetime_earned >= 0", name="ck_wallets_lifetime_earned_non_negative"
+        ),
+    )
+
+
+class CoinLedgerEntryModel(Base):
+    __tablename__ = "coin_ledger_entries"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    amount: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    reason: Mapped[str] = mapped_column(String(40), nullable=False)
+    source_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    idempotency_key: Mapped[str] = mapped_column(
+        String(160), unique=True, nullable=False
+    )
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint("amount <> 0", name="ck_coin_ledger_entries_amount_non_zero"),
+        Index("ix_coin_ledger_entries_user_time", "user_id", "created_at"),
+        Index("ix_coin_ledger_entries_created_at", "created_at"),
+    )

@@ -1,0 +1,60 @@
+"""Coins: an append-only ledger plus a cached balance per user.
+
+The ledger is the source of truth. ``wallets.balance`` is a derived value
+kept in the same transaction as every ledger insert, guarded by a
+``CHECK (balance >= 0)`` constraint, and reconciled by
+``SELECT user_id, SUM(amount) ...`` when in doubt. Corrections are new
+compensating entries, never edits: the database rejects UPDATE and DELETE on
+``coin_ledger_entries``.
+"""
+
+from dataclasses import dataclass
+from datetime import datetime
+from enum import StrEnum
+from uuid import UUID
+
+
+class LedgerReason(StrEnum):
+    CODE_REDEMPTION = "code_redemption"
+    CHALLENGE_REWARD = "challenge_reward"
+    TOURNAMENT_PRIZE = "tournament_prize"
+    SOCIAL_POST_REWARD = "social_post_reward"
+    ADMIN_ADJUSTMENT = "admin_adjustment"
+    STORE_PURCHASE = "store_purchase"
+
+
+@dataclass(frozen=True, slots=True)
+class NewLedgerEntry:
+    """A coin movement to record. ``amount`` is negative for spending.
+
+    ``idempotency_key`` is unique in the database: the same logical award
+    (for example ``code_redemption:<code id>``) can never be recorded twice,
+    whatever the application does.
+    """
+
+    user_id: UUID
+    amount: int
+    reason: LedgerReason
+    idempotency_key: str
+    created_at: datetime
+    source_id: str | None = None
+    actor_id: UUID | None = None
+    note: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class LedgerEntry:
+    id: int
+    user_id: UUID
+    amount: int
+    reason: LedgerReason
+    source_id: str | None
+    created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class Wallet:
+    user_id: UUID
+    balance: int
+    lifetime_earned: int
+    updated_at: datetime

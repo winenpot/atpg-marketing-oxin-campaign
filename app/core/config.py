@@ -2,6 +2,7 @@ import json
 from functools import lru_cache
 from typing import Self
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -14,6 +15,8 @@ class Settings(BaseSettings):
     forwarded_allow_ips: str = "127.0.0.1"
     api_key: SecretStr | None = None
     redemption_code_pepper: SecretStr | None = None
+    redemption_daily_limit_per_user: int = Field(default=20, ge=1, le=1_000)
+    campaign_timezone: str = "Asia/Tehran"
     email_provider: str = "development"
     auth_challenge_ttl_seconds: int = Field(default=600, ge=60, le=3_600)
     auth_session_ttl_seconds: int = Field(default=2_592_000, ge=300, le=31_536_000)
@@ -45,11 +48,31 @@ class Settings(BaseSettings):
             return value.replace("postgresql://", "postgresql+asyncpg://", 1)
         return value
 
+    @field_validator("api_key", "redemption_code_pepper", mode="before")
+    @classmethod
+    def treat_blank_secrets_as_unset(cls, value: object) -> object:
+        # ".env.example" ships "REDEMPTION_CODE_PEPPER=" (empty). An empty
+        # HMAC key must never count as configured.
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @field_validator("campaign_timezone")
+    @classmethod
+    def require_known_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as error:
+            raise ValueError(f"unknown IANA time zone: {value}") from error
+        return value
+
     @model_validator(mode="after")
     def reject_local_database_outside_development(self) -> Self:
         deployment_environments = {"demo", "staging", "production"}
         database_host = urlparse(self.database_url).hostname
-        local_hosts = {"localhost", "127.0.0.1", "::1", "postgres"}
+        # Loopback only. A Compose service name such as "postgres" is the
+        # normal production setup on a single VM (docs/OPERATIONS.md).
+        local_hosts = {"localhost", "127.0.0.1", "::1"}
         if (
             self.environment.lower() in deployment_environments
             and database_host in local_hosts
@@ -59,12 +82,14 @@ class Settings(BaseSettings):
             )
         if self.environment.lower() in deployment_environments and self.api_key is None:
             raise ValueError("API_KEY must be configured outside development")
-        if (
-            self.environment.lower() in deployment_environments
-            and self.redemption_code_pepper is None
+        if self.environment.lower() in deployment_environments and (
+            self.redemption_code_pepper is None
+            or len(self.redemption_code_pepper.get_secret_value()) < 32
         ):
             raise ValueError(
-                "REDEMPTION_CODE_PEPPER must be configured outside development"
+                "REDEMPTION_CODE_PEPPER must be at least 32 characters outside "
+                "development (generate with: python -c "
+                '"import secrets; print(secrets.token_urlsafe(48))")'
             )
         return self
 
@@ -81,6 +106,10 @@ class Settings(BaseSettings):
         ):
             raise ValueError("CORS_ORIGINS must be '*' or a JSON array of strings")
         return parsed
+
+    @property
+    def campaign_zone(self) -> ZoneInfo:
+        return ZoneInfo(self.campaign_timezone)
 
     @property
     def secure_session_cookies(self) -> bool:

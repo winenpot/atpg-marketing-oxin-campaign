@@ -5,12 +5,15 @@ from datetime import timedelta
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.errors import ApiError, api_error_handler
 from app.api.middleware import RateLimitMiddleware, RequestLoggingMiddleware
 from app.api.routes import router
 from app.application.authentication import AuthenticationService, AuthenticationSettings
 from app.application.passports import PassportService
 from app.application.ports import ReadinessChecker
 from app.application.redemption_codes import RedemptionService
+from app.application.unit_of_work import UnitOfWork
+from app.application.wallets import WalletService
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
 from app.infrastructure.authentication import (
@@ -22,10 +25,11 @@ from app.infrastructure.postgres.database import PostgreSQLAdapter
 from app.infrastructure.postgres.repositories import (
     PostgreSQLChallengeRepository,
     PostgreSQLPassportRepository,
-    PostgreSQLRedemptionCodeRepository,
     PostgreSQLSessionRepository,
     PostgreSQLUserRepository,
+    PostgreSQLWalletReader,
 )
+from app.infrastructure.postgres.unit_of_work import SqlAlchemyUnitOfWork
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -53,17 +57,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             max_verification_attempts=resolved_settings.auth_max_verification_attempts,
         ),
     )
-    passport_repository = PostgreSQLPassportRepository(database.session_factory)
-    passport_service = PassportService(passports=passport_repository)
+    passport_service = PassportService(
+        passports=PostgreSQLPassportRepository(database.session_factory)
+    )
+
+    def unit_of_work() -> UnitOfWork:
+        return SqlAlchemyUnitOfWork(database.session_factory)
+
     redemption_service = RedemptionService(
-        codes=PostgreSQLRedemptionCodeRepository(database.session_factory),
-        passports=passport_repository,
+        unit_of_work=unit_of_work,
         clock=SystemClock(),
         pepper=(
             resolved_settings.redemption_code_pepper.get_secret_value()
             if resolved_settings.redemption_code_pepper is not None
             else None
         ),
+        daily_limit=resolved_settings.redemption_daily_limit_per_user,
+        campaign_zone=resolved_settings.campaign_zone,
+    )
+    wallet_service = WalletService(
+        wallets=PostgreSQLWalletReader(database.session_factory)
     )
 
     @asynccontextmanager
@@ -88,11 +101,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         window_seconds=resolved_settings.rate_limit_window_seconds,
     )
     application.add_middleware(RequestLoggingMiddleware)
+    application.add_exception_handler(ApiError, api_error_handler)
     application.include_router(router)
     application.state.readiness_checker = readiness_checker
     application.state.authentication_service = authentication_service
     application.state.passport_service = passport_service
     application.state.redemption_service = redemption_service
+    application.state.wallet_service = wallet_service
     application.state.email_sender = email_sender
     application.state.settings = resolved_settings
     return application

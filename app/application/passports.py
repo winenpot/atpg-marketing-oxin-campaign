@@ -1,16 +1,13 @@
-from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
-from app.domain.passports import Campaign, PassportProgress
+from app.domain.passports import PassportProgress
 
 
 class PassportRepository(Protocol):
-    async def list_for_user(self, user_id: UUID) -> list[PassportProgress]: ...
+    """Read side of passports. Entries are only added inside a unit of work."""
 
-    async def add_points(
-        self, user_id: UUID, campaign: Campaign, amount: int, now: datetime
-    ) -> PassportProgress: ...
+    async def list_for_user(self, user_id: UUID) -> list[PassportProgress]: ...
 
 
 class PassportService:
