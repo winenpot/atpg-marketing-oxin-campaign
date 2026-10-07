@@ -1,10 +1,16 @@
-"""Printed product code format (v2): city prefix + Crockford Base32 + check.
+"""Printed product codes: a city prefix + random body + one check character.
 
-Layout of a canonical code (13 characters, no separators)::
+The shape of a code is described by a :class:`CodeFormat` (alphabet, body
+length, printed grouping, look-alike aliases). Formats are registered in
+:data:`FORMATS` by id; new batches use :data:`DEFAULT_FORMAT_ID` unless told
+otherwise. Adding a format is one ``register_format`` call (see
+``docs/CODES.md``).
+
+Layout of a canonical code in the default ``v2-b10`` format (13 characters)::
 
     TO 7KQ2M9XH4R 6
     ^^ ^^^^^^^^^^ ^
-    |  |          +-- check character (Luhn mod 32 over city index + body)
+    |  |          +-- check character (Luhn mod N over city index + body)
     |  +------------- 10 random Crockford Base32 characters = 50 bits
     +---------------- city prefix, one per SKU (see ``CityCode``)
 
@@ -12,36 +18,31 @@ Printed form groups the characters for humans: ``TO-7KQ2-M9XH-4R6``.
 
 Why this shape (details in ``docs/CODES.md``):
 
-* 50 random bits make guessing hopeless: with 500,000 codes printed for one
-  city, about 1 in 2.25 billion random guesses hits a valid code. The v1
-  format (2 letters + 7 digits) gave 1 in 20.
+* Enough random bits make guessing hopeless; ``CodeFormat.entropy_bits``
+  states how many a format has.
 * Crockford Base32 has no I, L, O or U, so the characters people confuse on
   a printed cap are folded together on input (O->0, I/L->1).
 * The check character lets the client and server say "you mistyped a
   character" without a database lookup, and it reveals nothing an attacker
   could not compute anyway.
 
-Everything in this module is pure and framework-free. Changing the alphabet,
-the city indexes or the check algorithm invalidates every code already
-printed, so treat them as frozen once a batch has gone to the printer.
+Everything in this module is pure and framework-free. A format's spec and the
+city indexes are part of every printed code: once a batch is exported its
+format is frozen by :meth:`CodeFormat.fingerprint`, and a changed spec is
+refused at startup.
 """
 
+import hashlib
+import json
+import math
 import secrets
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 
 from app.domain.passports import CityCode
 
-ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
-BASE = len(ALPHABET)  # 32
-BODY_LENGTH = 10
 PREFIX_LENGTH = 2
-CANONICAL_LENGTH = PREFIX_LENGTH + BODY_LENGTH + 1
-
-_VALUE_OF = {character: index for index, character in enumerate(ALPHABET)}
-# Characters people type for the ones Crockford Base32 leaves out.
-_BODY_ALIASES = {"O": "0", "I": "1", "L": "1"}
 
 # Frozen: the check character mixes in the city, so these numbers are part of
 # every printed code. Never renumber; only append new cities.
@@ -64,6 +65,10 @@ _DIGIT_TRANSLATION = str.maketrans(
     "01234567890123456789",
 )
 
+CROCKFORD_BASE32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+# Characters people type for the ones Crockford Base32 leaves out.
+CROCKFORD_ALIASES = {"O": "0", "I": "1", "L": "1"}
+
 
 class CodeProblem(StrEnum):
     """Why a typed code was rejected before any database lookup."""
@@ -73,11 +78,134 @@ class CodeProblem(StrEnum):
 
 
 class CodeFormatError(ValueError):
-    """Raised when user input cannot be a valid v2 code."""
+    """Raised when user input cannot be a valid code."""
 
     def __init__(self, problem: CodeProblem) -> None:
         super().__init__(problem.value)
         self.problem = problem
+
+
+class FormatRegistryError(ValueError):
+    """Raised when a format spec is invalid, unknown or clashes with another."""
+
+
+@dataclass(frozen=True, slots=True, eq=True)
+class CodeFormat:
+    """Everything that decides how a code looks and is checked.
+
+    ``grouping`` splits the characters after the prefix for printing, e.g.
+    ``(4, 4, 3)`` gives ``TO-7KQ2-M9XH-4R6``; it must add up to
+    ``body_length + 1`` (the body plus the check character). ``aliases``
+    maps characters people type to the alphabet characters they mean.
+    """
+
+    format_id: str
+    body_length: int
+    grouping: tuple[int, ...]
+    alphabet: str = CROCKFORD_BASE32
+    aliases: dict[str, str] = field(default_factory=lambda: dict(CROCKFORD_ALIASES))
+    check_scheme: str = "luhn-mod-n"
+
+    __hash__ = None  # type: ignore[assignment]  # holds a dict; never hashed
+
+    def __post_init__(self) -> None:
+        if not self.format_id or not self.format_id.isascii():
+            raise FormatRegistryError("format_id must be non-empty ASCII")
+        alphabet = self.alphabet
+        if len(alphabet) < 2 or len(set(alphabet)) != len(alphabet):
+            raise FormatRegistryError("alphabet needs 2+ distinct characters")
+        if not alphabet.isascii() or alphabet != alphabet.upper():
+            raise FormatRegistryError("alphabet must be upper-case ASCII")
+        if self.body_length < 1:
+            raise FormatRegistryError("body_length must be positive")
+        if not self.grouping or min(self.grouping) < 1:
+            raise FormatRegistryError("grouping needs positive group sizes")
+        if sum(self.grouping) != self.body_length + 1:
+            raise FormatRegistryError("grouping must add up to body_length + 1")
+        for typed, meant in self.aliases.items():
+            if typed in alphabet or meant not in alphabet:
+                raise FormatRegistryError(f"bad alias {typed!r} -> {meant!r}")
+        if self.check_scheme != "luhn-mod-n":
+            raise FormatRegistryError(f"unknown check scheme {self.check_scheme!r}")
+        if max(CITY_CHECK_INDEX.values()) >= len(alphabet):
+            raise FormatRegistryError("alphabet too small for the city indexes")
+
+    @property
+    def base(self) -> int:
+        return len(self.alphabet)
+
+    @property
+    def canonical_length(self) -> int:
+        return PREFIX_LENGTH + self.body_length + 1
+
+    @property
+    def entropy_bits(self) -> float:
+        """Random bits per code: what a guesser is up against."""
+        return self.body_length * math.log2(self.base)
+
+    def spec(self) -> dict[str, object]:
+        """The frozen part of the format, as plain JSON-able data."""
+        return {
+            "format_id": self.format_id,
+            "alphabet": self.alphabet,
+            "body_length": self.body_length,
+            "grouping": list(self.grouping),
+            "aliases": dict(sorted(self.aliases.items())),
+            "check_scheme": self.check_scheme,
+            "prefix_length": PREFIX_LENGTH,
+            "city_check_index": {c.value: i for c, i in CITY_CHECK_INDEX.items()},
+        }
+
+    def fingerprint(self) -> str:
+        """SHA-256 of :meth:`spec`; stored on a batch when it is frozen."""
+        encoded = json.dumps(self.spec(), sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+V2_B10 = CodeFormat(format_id="v2-b10", body_length=10, grouping=(4, 4, 3))
+
+FORMATS: dict[str, CodeFormat] = {}
+DEFAULT_FORMAT_ID = V2_B10.format_id
+
+
+def register_format(code_format: CodeFormat) -> CodeFormat:
+    """Add a format. Parsing picks the format by length, so lengths differ."""
+    existing = FORMATS.get(code_format.format_id)
+    if existing is not None:
+        if existing == code_format:
+            return existing
+        raise FormatRegistryError(f"{code_format.format_id} is already registered")
+    for other in FORMATS.values():
+        if other.canonical_length == code_format.canonical_length:
+            raise FormatRegistryError(
+                f"{code_format.format_id} has the same length as {other.format_id}"
+            )
+    FORMATS[code_format.format_id] = code_format
+    return code_format
+
+
+def unregister_format(format_id: str) -> None:
+    """Remove a format. For tests only: never unregister a printed format."""
+    if format_id == DEFAULT_FORMAT_ID:
+        raise FormatRegistryError("the default format cannot be unregistered")
+    FORMATS.pop(format_id, None)
+
+
+def get_format(format_id: str = "") -> CodeFormat:
+    """Return a registered format; empty means the default one."""
+    try:
+        return FORMATS[format_id or DEFAULT_FORMAT_ID]
+    except KeyError:
+        raise FormatRegistryError(f"unknown code format {format_id!r}") from None
+
+
+register_format(V2_B10)
+
+# Names kept for callers written before formats were pluggable (default format).
+ALPHABET = V2_B10.alphabet
+BASE = V2_B10.base
+BODY_LENGTH = V2_B10.body_length
+CANONICAL_LENGTH = V2_B10.canonical_length
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,56 +214,67 @@ class ParsedCode:
 
     city: CityCode
     canonical: str
+    format_id: str = DEFAULT_FORMAT_ID
 
     @property
     def printed(self) -> str:
         """Human-friendly grouping used on packaging, e.g. ``TO-7KQ2-M9XH-4R6``."""
-        return format_printed(self.canonical)
+        return format_printed(self.canonical, get_format(self.format_id))
 
 
-def _luhn_mod_n_sum(values: list[int], start_factor: int) -> int:
+def _luhn_mod_n_sum(values: list[int], start_factor: int, base: int) -> int:
     factor = start_factor
     total = 0
     for value in reversed(values):
         addend = factor * value
-        addend = addend // BASE + addend % BASE
+        addend = addend // base + addend % base
         total += addend
         factor = 1 if factor == 2 else 2
     return total
 
 
-def compute_check_value(city: CityCode, body: str) -> int:
-    """Return the Luhn mod 32 check value for ``city`` + ``body``.
+def _values(code_format: CodeFormat, characters: str) -> list[int]:
+    return [code_format.alphabet.index(c) for c in characters]
+
+
+def compute_check_value(
+    city: CityCode, body: str, code_format: CodeFormat = V2_B10
+) -> int:
+    """Return the Luhn mod N check value for ``city`` + ``body``.
 
     The city index is mixed in as a leading symbol so that a typo in the
     prefix (``MO`` instead of ``TO``) is also caught.
     """
-    values = [CITY_CHECK_INDEX[city], *(_VALUE_OF[c] for c in body)]
-    total = _luhn_mod_n_sum(values, start_factor=2)
-    return (BASE - total % BASE) % BASE
+    base = code_format.base
+    values = [CITY_CHECK_INDEX[city], *_values(code_format, body)]
+    return (base - _luhn_mod_n_sum(values, 2, base) % base) % base
 
 
-def check_is_valid(city: CityCode, body: str, check: str) -> bool:
+def check_is_valid(
+    city: CityCode, body: str, check: str, code_format: CodeFormat = V2_B10
+) -> bool:
     """True when ``check`` is the correct check character for the code."""
-    values = [
-        CITY_CHECK_INDEX[city],
-        *(_VALUE_OF[c] for c in body),
-        _VALUE_OF[check],
-    ]
-    return _luhn_mod_n_sum(values, start_factor=1) % BASE == 0
+    values = [CITY_CHECK_INDEX[city], *_values(code_format, body + check)]
+    return _luhn_mod_n_sum(values, 1, code_format.base) % code_format.base == 0
 
 
-def generate_code(city: CityCode) -> str:
+def generate_code(city: CityCode, code_format: CodeFormat | None = None) -> str:
     """Return a new canonical code using the OS CSPRNG."""
-    body = "".join(secrets.choice(ALPHABET) for _ in range(BODY_LENGTH))
-    check = ALPHABET[compute_check_value(city, body)]
+    fmt = code_format or get_format()
+    body = "".join(secrets.choice(fmt.alphabet) for _ in range(fmt.body_length))
+    check = fmt.alphabet[compute_check_value(city, body, fmt)]
     return f"{city.value}{body}{check}"
 
 
-def format_printed(canonical: str) -> str:
-    """Group a canonical code as ``PP-XXXX-XXXX-XXX`` for printing."""
-    rest = canonical[PREFIX_LENGTH:]
-    return f"{canonical[:PREFIX_LENGTH]}-{rest[:4]}-{rest[4:8]}-{rest[8:]}"
+def format_printed(canonical: str, code_format: CodeFormat | None = None) -> str:
+    """Group a canonical code for printing, e.g. ``PP-XXXX-XXXX-XXX``."""
+    fmt = code_format or get_format()
+    parts = [canonical[:PREFIX_LENGTH]]
+    position = PREFIX_LENGTH
+    for size in fmt.grouping:
+        parts.append(canonical[position : position + size])
+        position += size
+    return "-".join(parts)
 
 
 def _strip_separators(text: str) -> str:
@@ -161,13 +300,15 @@ def normalize_input(raw: str) -> str:
 def parse_code(raw: str) -> ParsedCode:
     """Parse user input into a :class:`ParsedCode` or raise ``CodeFormatError``.
 
+    The format is picked by length (registered lengths are unique).
     ``MALFORMED`` means the input cannot be a code at all (wrong length,
     unknown city, characters outside the alphabet). ``MISTYPED`` means the
     shape is right but the check character does not match, which almost
     always means one character was misread from the packaging.
     """
     text = normalize_input(raw)
-    if len(text) != CANONICAL_LENGTH or not text.isascii():
+    fmt = next((f for f in FORMATS.values() if f.canonical_length == len(text)), None)
+    if fmt is None or not text.isascii():
         raise CodeFormatError(CodeProblem.MALFORMED)
 
     # "0" in the prefix is a typo for "O" (TO, MO); prefixes are letters only.
@@ -176,11 +317,13 @@ def parse_code(raw: str) -> ParsedCode:
     if city is None:
         raise CodeFormatError(CodeProblem.MALFORMED)
 
-    tail = "".join(_BODY_ALIASES.get(c, c) for c in text[PREFIX_LENGTH:])
-    if any(c not in _VALUE_OF for c in tail):
+    tail = "".join(fmt.aliases.get(c, c) for c in text[PREFIX_LENGTH:])
+    if any(c not in fmt.alphabet for c in tail):
         raise CodeFormatError(CodeProblem.MALFORMED)
 
-    body, check = tail[:BODY_LENGTH], tail[BODY_LENGTH:]
-    if not check_is_valid(city, body, check):
+    body, check = tail[: fmt.body_length], tail[fmt.body_length :]
+    if not check_is_valid(city, body, check, fmt):
         raise CodeFormatError(CodeProblem.MISTYPED)
-    return ParsedCode(city=city, canonical=f"{prefix}{body}{check}")
+    return ParsedCode(
+        city=city, canonical=f"{prefix}{body}{check}", format_id=fmt.format_id
+    )
