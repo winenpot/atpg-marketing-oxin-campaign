@@ -143,6 +143,17 @@ class CodeBatchModel(Base):
     voided_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    format_id: Mapped[str] = mapped_column(
+        String(40), nullable=False, server_default="v2-b10"
+    )
+    format_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    exported_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    export_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    frozen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     __table_args__ = (
         CheckConstraint("quantity > 0", name="ck_code_batches_quantity_positive"),
@@ -152,6 +163,29 @@ class CodeBatchModel(Base):
         CheckConstraint(
             "status IN ('generated', 'active', 'void')",
             name="ck_code_batches_status",
+        ),
+    )
+
+
+class CodeBatchEventModel(Base):
+    __tablename__ = "code_batch_events"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    batch_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("code_batches.id", ondelete="RESTRICT"), nullable=False
+    )
+    event_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    actor: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    detail: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_code_batch_events_batch_time", "batch_id", "created_at"),
+        CheckConstraint(
+            "event_type IN ('generated', 'exported', 'frozen', 'activated', 'voided')",
+            name="ck_code_batch_events_type",
         ),
     )
 

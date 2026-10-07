@@ -34,11 +34,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.application.redemption_codes import hash_redemption_code
 from app.core.config import get_settings
-from app.domain.code_batches import BatchStatus
-from app.domain.codes import format_printed, generate_code
+from app.domain.code_batches import BatchEventType, BatchStatus
+from app.domain.codes import format_printed, generate_code, get_format
 from app.domain.passports import Campaign, CityCode
 from app.infrastructure.postgres.database import PostgreSQLAdapter
-from app.infrastructure.postgres.models import CodeBatchModel, RedemptionCodeModel
+from app.infrastructure.postgres.models import (
+    CodeBatchEventModel,
+    CodeBatchModel,
+    RedemptionCodeModel,
+)
 
 # asyncpg allows at most 32767 bind parameters per statement; 5 columns per row.
 INSERT_CHUNK = 2_000
@@ -123,13 +127,19 @@ async def generate_batch(
     base_url: str,
     output: Path,
     pepper: str,
-    generate: CodeGenerator = generate_code,
+    format_id: str = "",
+    generate: CodeGenerator | None = None,
 ) -> UUID:
     """Create the batch, insert ``quantity`` unique codes, write the CSV."""
     if not 0 < quantity <= MAX_QUANTITY:
         raise ValueError(f"quantity must be between 1 and {MAX_QUANTITY}")
     if coins_per_code < 0:
         raise ValueError("coins_per_code must not be negative")
+
+    code_format = get_format(format_id)
+    generate_fn: CodeGenerator = generate or (
+        lambda city_: generate_code(city_, code_format)
+    )
 
     now = datetime.now(UTC)
     batch_id = uuid4()
@@ -143,6 +153,16 @@ async def generate_batch(
                 quantity=quantity,
                 coins_per_code=coins_per_code,
                 status=BatchStatus.GENERATED.value,
+                format_id=code_format.format_id,
+                created_at=now,
+            )
+        )
+        await session.flush()  # insert the batch row before its event row (FK)
+        session.add(
+            CodeBatchEventModel(
+                batch_id=batch_id,
+                event_type=BatchEventType.GENERATED.value,
+                detail=f"quantity={quantity} format={code_format.format_id}",
                 created_at=now,
             )
         )
@@ -153,7 +173,7 @@ async def generate_batch(
         writer.writerow(CSV_HEADER)
         while remaining > 0:
             wanted = min(INSERT_CHUNK, remaining)
-            candidates = build_unique_codes(city, wanted, generate)
+            candidates = build_unique_codes(city, wanted, generate_fn)
             inserted = await insert_codes(
                 factory, batch_id, city, candidates, pepper, now
             )
@@ -161,7 +181,7 @@ async def generate_batch(
                 [
                     str(batch_id),
                     city.name,
-                    format_printed(code),
+                    format_printed(code, code_format),
                     code,
                     qr_url(base_url, code),
                 ]
@@ -187,6 +207,7 @@ async def main_async(arguments: argparse.Namespace) -> None:
             base_url=arguments.base_url,
             output=arguments.output,
             pepper=settings.redemption_code_pepper.get_secret_value(),
+            format_id=arguments.format,
         )
     finally:
         await database.dispose()
@@ -215,6 +236,11 @@ def main() -> None:
         "--base-url", required=True, help="public site, e.g. https://play.example.ir"
     )
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--format",
+        default="",
+        help="registered code format id (default: the active default format)",
+    )
     asyncio.run(main_async(parser.parse_args()))
 
 

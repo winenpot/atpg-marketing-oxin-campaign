@@ -1,3 +1,5 @@
+"""Printed code batches: lifecycle, format tracking and append-only events."""
+
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -21,6 +23,21 @@ class BatchStatus(StrEnum):
     VOID = "void"
 
 
+class BatchEventType(StrEnum):
+    """One append-only history row per thing that happened to a batch.
+
+    Recorded in ``code_batch_events`` (never updated or deleted) so a
+    leaked-batch investigation or a printer dispute has a full, ordered
+    trail: who did what, and when.
+    """
+
+    GENERATED = "generated"
+    EXPORTED = "exported"
+    FROZEN = "frozen"
+    ACTIVATED = "activated"
+    VOIDED = "voided"
+
+
 @dataclass(slots=True)
 class CodeBatch:
     id: UUID
@@ -29,6 +46,16 @@ class CodeBatch:
     quantity: int
     coins_per_code: int
     status: BatchStatus
+    format_id: str
     created_at: datetime
     activated_at: datetime | None
     voided_at: datetime | None
+    format_fingerprint: str | None = None
+    exported_at: datetime | None = None
+    export_sha256: str | None = None
+    frozen_at: datetime | None = None
+
+    @property
+    def is_frozen(self) -> bool:
+        """True once the batch's format can no longer change (post-export)."""
+        return self.frozen_at is not None
