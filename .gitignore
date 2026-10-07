@@ -28,3 +28,9 @@ var/redemption-codes/
 
 # Docker and deployment artifacts
 *.tar
+
+# Graphify cache files
+graphify-out/cache
+# Local agent plans and handoff notes
+.hermes/
+HANDOFF.md
