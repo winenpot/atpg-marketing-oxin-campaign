@@ -1,42 +1,71 @@
 import hashlib
 import hmac
-import re
+from dataclasses import dataclass
 from datetime import datetime
+from enum import StrEnum
 from typing import Protocol
 from uuid import UUID
 
 from app.application.authentication import Clock
-from app.application.passports import PassportRepository
-from app.domain.passports import Campaign, CityCode, PassportProgress
+from app.domain.codes import CodeFormatError, CodeProblem, parse_code
+from app.domain.passports import CityCode
 from app.domain.redemption_codes import RedemptionCode
 
-CODE_PATTERN = re.compile(r"^[A-Z]{2}\d{7}$")
 
-_CITY_TO_CAMPAIGN: dict[CityCode, Campaign] = {
-    CityCode.PARIS: Campaign.PARIS,
-    CityCode.BERLIN: Campaign.BERLIN,
-    CityCode.PATTAYA: Campaign.PATTAYA,
-    CityCode.MEXICO: Campaign.MEXICO,
-    CityCode.MADRID: Campaign.MADRID,
-    CityCode.TOKYO: Campaign.TOKYO,
-    CityCode.MOSCOW: Campaign.MOSCOW,
-}
+class RedemptionFailure(StrEnum):
+    """Stable, client-visible reasons a redemption did not happen."""
 
-POINTS_PER_REDEMPTION = 1
+    INVALID = "code_invalid"
+    MISTYPED = "code_mistyped"
+    ALREADY_REDEEMED = "code_already_redeemed"
+    UNAVAILABLE = "redemption_unavailable"
 
 
 class RedemptionError(Exception):
-    """Raised for any invalid, unknown, or already-used redemption code."""
+    def __init__(self, failure: RedemptionFailure) -> None:
+        super().__init__(failure.value)
+        self.failure = failure
 
 
-class RedemptionCodeRepository(Protocol):
-    async def bulk_insert(self, codes: list[RedemptionCode]) -> None: ...
+class RedemptionStatus(StrEnum):
+    CREDITED = "credited"
+    REPLAYED = "replayed"
+    NOT_FOUND = "not_found"
+    ALREADY_REDEEMED = "already_redeemed"
 
-    async def get_unredeemed_by_hash(self, code_hash: str) -> RedemptionCode | None: ...
 
-    async def mark_redeemed(
-        self, code_id: UUID, user_id: UUID, now: datetime
-    ) -> bool: ...
+@dataclass(frozen=True, slots=True)
+class RedemptionOutcome:
+    """What the store did with one redemption attempt.
+
+    ``REPLAYED`` means this same user had already redeemed this code (for
+    example a client retry after a network timeout): nothing new was credited
+    and the original award is reported again.
+    """
+
+    status: RedemptionStatus
+    city: CityCode | None = None
+    coins_awarded: int = 0
+    entries_in_city: int = 0
+    coin_balance: int = 0
+
+
+class RedemptionStore(Protocol):
+    async def bulk_insert(self, codes: list[RedemptionCode]) -> None:
+        """Insert all codes in one transaction or none of them."""
+
+    async def void_batch(self, batch: str, now: datetime) -> int:
+        """Void unredeemed codes of a print run; return how many were voided."""
+
+    async def redeem(
+        self, code_hash: str, user_id: UUID, coins: int, now: datetime
+    ) -> RedemptionOutcome:
+        """Atomically claim the code, record the redemption and credit coins.
+
+        Either every effect (code claimed, redemption row, per-city entry,
+        coin ledger entry, wallet balance) is committed together or none is.
+        Two concurrent calls for the same code can never both be credited.
+        """
 
 
 def hash_redemption_code(code: str, pepper: str) -> str:
@@ -48,35 +77,38 @@ def hash_redemption_code(code: str, pepper: str) -> str:
 class RedemptionService:
     def __init__(
         self,
-        codes: RedemptionCodeRepository,
-        passports: PassportRepository,
+        store: RedemptionStore,
         clock: Clock,
         pepper: str | None,
+        coins_per_redemption: int,
     ) -> None:
-        self._codes = codes
-        self._passports = passports
+        self._store = store
         self._clock = clock
         self._pepper = pepper
+        self._coins = coins_per_redemption
 
-    async def redeem(self, user_id: UUID, raw_code: str) -> PassportProgress:
+    async def redeem(self, user_id: UUID, raw_code: str) -> RedemptionOutcome:
         if self._pepper is None:
-            raise RedemptionError("redemption is not configured")
+            raise RedemptionError(RedemptionFailure.UNAVAILABLE)
 
-        code = raw_code.strip().upper()
-        if not CODE_PATTERN.match(code):
-            raise RedemptionError("invalid redemption code")
+        try:
+            parsed = parse_code(raw_code)
+        except CodeFormatError as error:
+            failure = (
+                RedemptionFailure.MISTYPED
+                if error.problem is CodeProblem.MISTYPED
+                else RedemptionFailure.INVALID
+            )
+            raise RedemptionError(failure) from error
 
-        code_hash = hash_redemption_code(code, self._pepper)
-        record = await self._codes.get_unredeemed_by_hash(code_hash)
-        if record is None:
-            raise RedemptionError("invalid redemption code")
-
-        now = self._clock.now()
-        marked = await self._codes.mark_redeemed(record.id, user_id, now)
-        if not marked:
-            raise RedemptionError("redemption code already used")
-
-        campaign = _CITY_TO_CAMPAIGN[record.city]
-        return await self._passports.add_points(
-            user_id, campaign, POINTS_PER_REDEMPTION, now
+        outcome = await self._store.redeem(
+            hash_redemption_code(parsed.canonical, self._pepper),
+            user_id,
+            self._coins,
+            self._clock.now(),
         )
+        if outcome.status is RedemptionStatus.NOT_FOUND:
+            raise RedemptionError(RedemptionFailure.INVALID)
+        if outcome.status is RedemptionStatus.ALREADY_REDEEMED:
+            raise RedemptionError(RedemptionFailure.ALREADY_REDEEMED)
+        return outcome

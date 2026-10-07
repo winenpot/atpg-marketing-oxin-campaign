@@ -14,17 +14,32 @@ from app.application.authentication import (
     UserRepository,
 )
 from app.application.passports import PassportRepository
-from app.application.redemption_codes import RedemptionCodeRepository
+from app.application.redemption_codes import (
+    RedemptionOutcome,
+    RedemptionStatus,
+    RedemptionStore,
+)
+from app.application.wallets import WalletRepository
 from app.domain.authentication import AuthenticatedSession, AuthenticationChallenge
-from app.domain.passports import Campaign, CityCode, PassportProgress
+from app.domain.coins import CoinLedgerEntry, CoinReason
+from app.domain.passports import (
+    CAMPAIGN_BY_CITY,
+    ENTRIES_PER_CODE,
+    Campaign,
+    CityCode,
+    PassportProgress,
+)
 from app.domain.redemption_codes import RedemptionCode
 from app.domain.users import AccountStatus, User, VerificationStatus
 from app.infrastructure.postgres.models import (
     AuthenticationChallengeModel,
+    CoinLedgerEntryModel,
     PassportProgressModel,
     RedemptionCodeModel,
+    RedemptionModel,
     SessionModel,
     UserModel,
+    WalletModel,
 )
 
 
@@ -75,6 +90,8 @@ def redemption_code_from_model(model: RedemptionCodeModel) -> RedemptionCode:
         created_at=model.created_at,
         redeemed_at=model.redeemed_at,
         redeemed_by_user_id=model.redeemed_by_user_id,
+        batch=model.batch,
+        voided_at=model.voided_at,
     )
 
 
@@ -289,53 +306,30 @@ class PostgreSQLPassportRepository(PassportRepository):
             )
             return [passport_progress_from_model(model) for model in result]
 
-    async def add_points(
-        self, user_id: UUID, campaign: Campaign, amount: int, now: datetime
-    ) -> PassportProgress:
-        async with self._factory() as session:
-            async with session.begin():
-                insert_stmt = pg_insert(PassportProgressModel).values(
-                    id=uuid4(),
-                    user_id=user_id,
-                    campaign=campaign.value,
-                    points=amount,
-                    created_at=now,
-                    updated_at=now,
-                )
-                upsert_stmt = insert_stmt.on_conflict_do_update(
-                    index_elements=[
-                        PassportProgressModel.user_id,
-                        PassportProgressModel.campaign,
-                    ],
-                    set_={
-                        "points": PassportProgressModel.points
-                        + insert_stmt.excluded.points,
-                        "updated_at": insert_stmt.excluded.updated_at,
-                    },
-                )
-                await session.execute(upsert_stmt)
-            result = await session.scalar(
-                select(PassportProgressModel).where(
-                    PassportProgressModel.user_id == user_id,
-                    PassportProgressModel.campaign == campaign.value,
-                )
-            )
-            if result is None:
-                raise LookupError("passport progress not found")
-            return passport_progress_from_model(result)
 
+class PostgreSQLRedemptionStore(RedemptionStore):
+    """Redemption persistence.
 
-class PostgreSQLRedemptionCodeRepository(RedemptionCodeRepository):
+    ``redeem`` is the correctness-critical path. It runs as ONE transaction at
+    the default READ COMMITTED level and relies on a single conditional UPDATE
+    as the claim: Postgres takes a row lock on the code row, so a concurrent
+    claim of the same code blocks until this transaction ends and then
+    re-evaluates ``redeemed_at IS NULL`` against the committed row (false), so
+    it claims nothing. Everything else (redemption row, per-city entry,
+    wallet, ledger) happens in the same transaction, so a failure anywhere
+    rolls the claim back and the code stays redeemable.
+    """
+
     _BATCH_SIZE = 5_000
 
     def __init__(self, factory: async_sessionmaker[AsyncSession]) -> None:
         self._factory = factory
 
     async def bulk_insert(self, codes: list[RedemptionCode]) -> None:
-        for start in range(0, len(codes), self._BATCH_SIZE):
-            batch = codes[start : start + self._BATCH_SIZE]
-            async with self._factory() as session:
-                async with session.begin():
+        async with self._factory() as session:
+            async with session.begin():
+                for start in range(0, len(codes), self._BATCH_SIZE):
+                    chunk = codes[start : start + self._BATCH_SIZE]
                     await session.execute(
                         insert(RedemptionCodeModel),
                         [
@@ -346,31 +340,193 @@ class PostgreSQLRedemptionCodeRepository(RedemptionCodeRepository):
                                 "created_at": code.created_at,
                                 "redeemed_at": code.redeemed_at,
                                 "redeemed_by_user_id": code.redeemed_by_user_id,
+                                "batch": code.batch,
+                                "voided_at": code.voided_at,
                             }
-                            for code in batch
+                            for code in chunk
                         ],
                     )
 
-    async def get_unredeemed_by_hash(self, code_hash: str) -> RedemptionCode | None:
-        async with self._factory() as session:
-            result = await session.scalar(
-                select(RedemptionCodeModel).where(
-                    RedemptionCodeModel.code_hash == code_hash,
-                    RedemptionCodeModel.redeemed_at.is_(None),
-                )
-            )
-            return redemption_code_from_model(result) if result else None
-
-    async def mark_redeemed(self, code_id: UUID, user_id: UUID, now: datetime) -> bool:
+    async def void_batch(self, batch: str, now: datetime) -> int:
         async with self._factory() as session:
             async with session.begin():
                 result = await session.execute(
                     update(RedemptionCodeModel)
                     .where(
-                        RedemptionCodeModel.id == code_id,
+                        RedemptionCodeModel.batch == batch,
                         RedemptionCodeModel.redeemed_at.is_(None),
+                        RedemptionCodeModel.voided_at.is_(None),
                     )
-                    .values(redeemed_at=now, redeemed_by_user_id=user_id)
+                    .values(voided_at=now)
                 )
-                cursor_result = cast(CursorResult[Any], result)
-                return cursor_result.rowcount == 1
+                return cast(CursorResult[Any], result).rowcount
+
+    async def redeem(
+        self, code_hash: str, user_id: UUID, coins: int, now: datetime
+    ) -> RedemptionOutcome:
+        async with self._factory() as session:
+            async with session.begin():
+                claimed = (
+                    await session.execute(
+                        update(RedemptionCodeModel)
+                        .where(
+                            RedemptionCodeModel.code_hash == code_hash,
+                            RedemptionCodeModel.redeemed_at.is_(None),
+                            RedemptionCodeModel.voided_at.is_(None),
+                        )
+                        .values(redeemed_at=now, redeemed_by_user_id=user_id)
+                        .returning(RedemptionCodeModel.id, RedemptionCodeModel.city)
+                    )
+                ).one_or_none()
+                if claimed is None:
+                    return await self._explain_unclaimed(session, code_hash, user_id)
+
+                code_id, city_value = claimed
+                city = CityCode(city_value)
+                session.add(
+                    RedemptionModel(
+                        id=uuid4(),
+                        user_id=user_id,
+                        code_id=code_id,
+                        city=city.value,
+                        coins_awarded=coins,
+                        created_at=now,
+                    )
+                )
+                entries = await self._add_entry(session, user_id, city, now)
+                balance = await self._credit_wallet(session, user_id, coins, now)
+                session.add(
+                    CoinLedgerEntryModel(
+                        id=uuid4(),
+                        user_id=user_id,
+                        amount=coins,
+                        reason=CoinReason.CODE_REDEMPTION.value,
+                        balance_after=balance,
+                        idempotency_key=f"redeem:{code_id}",
+                        created_at=now,
+                    )
+                )
+        return RedemptionOutcome(
+            status=RedemptionStatus.CREDITED,
+            city=city,
+            coins_awarded=coins,
+            entries_in_city=entries,
+            coin_balance=balance,
+        )
+
+    @staticmethod
+    async def _add_entry(
+        session: AsyncSession, user_id: UUID, city: CityCode, now: datetime
+    ) -> int:
+        campaign = CAMPAIGN_BY_CITY[city]
+        insert_statement = pg_insert(PassportProgressModel).values(
+            id=uuid4(),
+            user_id=user_id,
+            campaign=campaign.value,
+            points=ENTRIES_PER_CODE,
+            created_at=now,
+            updated_at=now,
+        )
+        upsert = insert_statement.on_conflict_do_update(
+            index_elements=[
+                PassportProgressModel.user_id,
+                PassportProgressModel.campaign,
+            ],
+            set_={
+                "points": PassportProgressModel.points + ENTRIES_PER_CODE,
+                "updated_at": now,
+            },
+        ).returning(PassportProgressModel.points)
+        return (await session.execute(upsert)).scalar_one()
+
+    @staticmethod
+    async def _credit_wallet(
+        session: AsyncSession, user_id: UUID, coins: int, now: datetime
+    ) -> int:
+        insert_statement = pg_insert(WalletModel).values(
+            user_id=user_id, balance=coins, updated_at=now
+        )
+        upsert = insert_statement.on_conflict_do_update(
+            index_elements=[WalletModel.user_id],
+            set_={
+                "balance": WalletModel.balance + insert_statement.excluded.balance,
+                "updated_at": now,
+            },
+        ).returning(WalletModel.balance)
+        return (await session.execute(upsert)).scalar_one()
+
+    @staticmethod
+    async def _explain_unclaimed(
+        session: AsyncSession, code_hash: str, user_id: UUID
+    ) -> RedemptionOutcome:
+        row = (
+            await session.execute(
+                select(
+                    RedemptionCodeModel.id, RedemptionCodeModel.redeemed_by_user_id
+                ).where(RedemptionCodeModel.code_hash == code_hash)
+            )
+        ).one_or_none()
+        # Unknown, or voided before anyone redeemed it.
+        if row is None or row.redeemed_by_user_id is None:
+            return RedemptionOutcome(status=RedemptionStatus.NOT_FOUND)
+        if row.redeemed_by_user_id != user_id:
+            return RedemptionOutcome(status=RedemptionStatus.ALREADY_REDEEMED)
+
+        # Same user again (a client retry): report the original award.
+        redemption = await session.scalar(
+            select(RedemptionModel).where(RedemptionModel.code_id == row.id)
+        )
+        if redemption is None:
+            raise LookupError("redeemed code has no redemption record")
+        city = CityCode(redemption.city)
+        entries = await session.scalar(
+            select(PassportProgressModel.points).where(
+                PassportProgressModel.user_id == user_id,
+                PassportProgressModel.campaign == CAMPAIGN_BY_CITY[city].value,
+            )
+        )
+        balance = await session.scalar(
+            select(WalletModel.balance).where(WalletModel.user_id == user_id)
+        )
+        return RedemptionOutcome(
+            status=RedemptionStatus.REPLAYED,
+            city=city,
+            coins_awarded=redemption.coins_awarded,
+            entries_in_city=entries or 0,
+            coin_balance=balance or 0,
+        )
+
+
+class PostgreSQLWalletRepository(WalletRepository):
+    def __init__(self, factory: async_sessionmaker[AsyncSession]) -> None:
+        self._factory = factory
+
+    async def get_balance(self, user_id: UUID) -> int:
+        async with self._factory() as session:
+            balance = await session.scalar(
+                select(WalletModel.balance).where(WalletModel.user_id == user_id)
+            )
+            return balance or 0
+
+    async def list_entries(self, user_id: UUID, limit: int) -> list[CoinLedgerEntry]:
+        async with self._factory() as session:
+            result = await session.scalars(
+                select(CoinLedgerEntryModel)
+                .where(CoinLedgerEntryModel.user_id == user_id)
+                .order_by(
+                    CoinLedgerEntryModel.created_at.desc(),
+                    CoinLedgerEntryModel.id.desc(),
+                )
+                .limit(limit)
+            )
+            return [
+                CoinLedgerEntry(
+                    id=model.id,
+                    user_id=model.user_id,
+                    amount=model.amount,
+                    reason=CoinReason(model.reason),
+                    balance_after=model.balance_after,
+                    created_at=model.created_at,
+                )
+                for model in result
+            ]

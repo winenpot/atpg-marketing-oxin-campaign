@@ -7,6 +7,7 @@ from app.application.authentication import AuthenticationError, AuthenticationSe
 from app.application.passports import PassportService
 from app.application.ports import ReadinessChecker
 from app.application.redemption_codes import RedemptionService
+from app.application.wallets import WalletService
 from app.domain.users import User
 
 session_cookie = APIKeyCookie(
@@ -30,6 +31,10 @@ def get_passport_service(request: Request) -> PassportService:
 
 def get_redemption_service(request: Request) -> RedemptionService:
     return cast(RedemptionService, request.app.state.redemption_service)
+
+
+def get_wallet_service(request: Request) -> WalletService:
+    return cast(WalletService, request.app.state.wallet_service)
 
 
 async def get_current_user(

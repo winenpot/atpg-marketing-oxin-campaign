@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     forwarded_allow_ips: str = "127.0.0.1"
     api_key: SecretStr | None = None
     redemption_code_pepper: SecretStr | None = None
+    coins_per_redemption: int = Field(default=10, ge=1, le=10_000)
     email_provider: str = "development"
     auth_challenge_ttl_seconds: int = Field(default=600, ge=60, le=3_600)
     auth_session_ttl_seconds: int = Field(default=2_592_000, ge=300, le=31_536_000)

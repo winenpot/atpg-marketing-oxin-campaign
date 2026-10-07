@@ -13,3 +13,5 @@ class RedemptionCode:
     created_at: datetime
     redeemed_at: datetime | None
     redeemed_by_user_id: UUID | None
+    batch: str | None = None
+    voided_at: datetime | None = None

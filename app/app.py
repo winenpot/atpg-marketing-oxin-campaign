@@ -11,6 +11,7 @@ from app.application.authentication import AuthenticationService, Authentication
 from app.application.passports import PassportService
 from app.application.ports import ReadinessChecker
 from app.application.redemption_codes import RedemptionService
+from app.application.wallets import WalletService
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
 from app.infrastructure.authentication import (
@@ -22,9 +23,10 @@ from app.infrastructure.postgres.database import PostgreSQLAdapter
 from app.infrastructure.postgres.repositories import (
     PostgreSQLChallengeRepository,
     PostgreSQLPassportRepository,
-    PostgreSQLRedemptionCodeRepository,
+    PostgreSQLRedemptionStore,
     PostgreSQLSessionRepository,
     PostgreSQLUserRepository,
+    PostgreSQLWalletRepository,
 )
 
 
@@ -56,15 +58,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     passport_repository = PostgreSQLPassportRepository(database.session_factory)
     passport_service = PassportService(passports=passport_repository)
     redemption_service = RedemptionService(
-        codes=PostgreSQLRedemptionCodeRepository(database.session_factory),
-        passports=passport_repository,
+        store=PostgreSQLRedemptionStore(database.session_factory),
         clock=SystemClock(),
         pepper=(
             resolved_settings.redemption_code_pepper.get_secret_value()
             if resolved_settings.redemption_code_pepper is not None
             else None
         ),
+        coins_per_redemption=resolved_settings.coins_per_redemption,
     )
+    wallet_service = WalletService(PostgreSQLWalletRepository(database.session_factory))
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -93,6 +96,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.state.authentication_service = authentication_service
     application.state.passport_service = passport_service
     application.state.redemption_service = redemption_service
+    application.state.wallet_service = wallet_service
     application.state.email_sender = email_sender
     application.state.settings = resolved_settings
     return application

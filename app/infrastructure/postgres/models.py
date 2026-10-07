@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -137,5 +138,77 @@ class RedemptionCodeModel(Base):
     redeemed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+    # Print-run label, so a leaked or misprinted batch can be traced and voided.
+    batch: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    voided_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
-    __table_args__ = (Index("ix_redemption_codes_city", "city"),)
+    __table_args__ = (
+        Index("ix_redemption_codes_city", "city"),
+        Index("ix_redemption_codes_batch", "batch"),
+    )
+
+
+class RedemptionModel(Base):
+    """One row per successful redemption. Immutable; one per code."""
+
+    __tablename__ = "redemptions"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    code_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("redemption_codes.id", ondelete="RESTRICT"), nullable=False
+    )
+    city: Mapped[str] = mapped_column(String(2), nullable=False)
+    coins_awarded: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("code_id", name="uq_redemptions_code_id"),
+        Index("ix_redemptions_user_id", "user_id"),
+    )
+
+
+class WalletModel(Base):
+    """Cached coin balance. The ledger is the source of truth."""
+
+    __tablename__ = "wallets"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="RESTRICT"), primary_key=True
+    )
+    balance: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+    __table_args__ = (CheckConstraint("balance >= 0", name="ck_wallets_balance"),)
+
+
+class CoinLedgerEntryModel(Base):
+    """Append-only record of every coin movement. Never updated or deleted."""
+
+    __tablename__ = "coin_ledger_entries"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    reason: Mapped[str] = mapped_column(String(40), nullable=False)
+    balance_after: Mapped[int] = mapped_column(Integer, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("idempotency_key", name="uq_coin_ledger_idempotency_key"),
+        CheckConstraint("amount <> 0", name="ck_coin_ledger_amount"),
+        Index("ix_coin_ledger_user_created", "user_id", "created_at"),
+    )
