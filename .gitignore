@@ -34,3 +34,6 @@ graphify-out/cache
 # Local agent plans and handoff notes
 .hermes/
 HANDOFF.md
+
+# Obsidian per-person workspace state (notes themselves are tracked)
+docs/vault/.obsidian/
