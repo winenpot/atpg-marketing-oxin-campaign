@@ -1,20 +1,34 @@
+# Production image for the API and the worker.
+#
+# Built on the server itself (docs/OPERATIONS.md). Two things make that work
+# from inside Iran:
+#   * the base image comes through a Docker Hub mirror configured in
+#     /etc/docker/daemon.json ("registry-mirrors"), or a pre-loaded image;
+#   * Python packages come from requirements.txt, exported from uv.lock WITH
+#     hashes, so any PyPI mirror can be used (PIP_INDEX_URL) without trusting
+#     it: pip refuses a package whose hash does not match.
+# Pin the base image by digest once you have pulled it once:
+#   FROM python:3.13-slim-bookworm@sha256:<digest>
 FROM python:3.13-slim-bookworm AS runtime
 
+ARG PIP_INDEX_URL=https://pypi.org/simple
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PATH="/app/.venv/bin:$PATH"
 
 WORKDIR /app
 
 RUN groupadd --system app && useradd --system --gid app --home-dir /app app
 
-COPY --from=ghcr.io/astral-sh/uv:0.8.17 /uv /uvx /usr/local/bin/
-COPY pyproject.toml uv.lock ./
-
-RUN uv sync --locked --no-dev --no-install-project
+COPY requirements.txt ./
+RUN python -m venv /app/.venv \
+    && /app/.venv/bin/pip install --no-cache-dir --require-hashes \
+       --index-url "$PIP_INDEX_URL" -r requirements.txt
 
 COPY app ./app
 COPY alembic ./alembic
+COPY scripts ./scripts
 COPY alembic.ini main.py ./
 
 RUN chown -R app:app /app
@@ -25,4 +39,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:' + __import__('os').environ.get('PORT', '8000') + '/health', timeout=3)"
 
+# Production runs several workers behind nginx (deploy/compose.prod.yml sets
+# the command); this default is for local "docker compose up".
 CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips ${FORWARDED_ALLOW_IPS:-127.0.0.1}"]
