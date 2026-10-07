@@ -1,6 +1,6 @@
 from typing import Self
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import (
 
 from app.application.ports import ReadinessPort
 from app.core.config import Settings
+from app.infrastructure.postgres.models import CodeBatchModel
 
 
 class PostgreSQLAdapter(ReadinessPort):
@@ -33,6 +34,22 @@ class PostgreSQLAdapter(ReadinessPort):
     async def check_connection(self) -> None:
         async with self.engine.connect() as connection:
             await connection.execute(text("SELECT 1"))
+
+    async def frozen_batch_formats(self) -> list[tuple[str, str]]:
+        """Every (format_id, format_fingerprint) pair of a frozen batch.
+
+        Used at startup to catch a registered ``CodeFormat`` that has
+        drifted from what a printed batch was frozen under (see
+        ``app.domain.codes.verify_frozen_formats``).
+        """
+        statement = select(
+            CodeBatchModel.format_id, CodeBatchModel.format_fingerprint
+        ).where(CodeBatchModel.frozen_at.is_not(None))
+        async with self.session_factory() as session:
+            rows = (await session.execute(statement)).all()
+        return [
+            (format_id, fingerprint) for format_id, fingerprint in rows if fingerprint
+        ]
 
     async def dispose(self) -> None:
         await self.engine.dispose()

@@ -17,6 +17,7 @@ from app.domain.codes import (
     parse_code,
     register_format,
     unregister_format,
+    verify_frozen_formats,
 )
 from app.domain.passports import CityCode
 
@@ -146,3 +147,21 @@ def test_check_character_still_catches_typos_on_a_small_alphabet(
     with pytest.raises(CodeFormatError) as raised:
         parse_code(tampered)
     assert raised.value.problem is CodeProblem.MISTYPED
+
+
+def test_verify_frozen_formats_accepts_a_matching_fingerprint() -> None:
+    verify_frozen_formats([(V2_B10.format_id, V2_B10.fingerprint())])
+
+
+def test_verify_frozen_formats_rejects_a_changed_spec() -> None:
+    with pytest.raises(FormatRegistryError, match="has changed since it was frozen"):
+        verify_frozen_formats([(V2_B10.format_id, "0" * 64)])
+
+
+def test_verify_frozen_formats_rejects_an_unregistered_format() -> None:
+    with pytest.raises(FormatRegistryError):
+        verify_frozen_formats([("gone-missing", "0" * 64)])
+
+
+def test_verify_frozen_formats_accepts_an_empty_list() -> None:
+    verify_frozen_formats([])

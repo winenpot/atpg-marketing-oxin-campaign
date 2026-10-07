@@ -208,6 +208,27 @@ BODY_LENGTH = V2_B10.body_length
 CANONICAL_LENGTH = V2_B10.canonical_length
 
 
+def verify_frozen_formats(frozen: list[tuple[str, str]]) -> None:
+    """Fail loudly if a frozen batch's format no longer matches the code.
+
+    ``frozen`` is a list of ``(format_id, format_fingerprint)`` pairs read
+    from already-frozen batches (codes have left the database as printer
+    plaintext). Once frozen, a format's spec is contractually unchangeable;
+    call this at startup so an accidental edit to a registered
+    ``CodeFormat`` is caught before the app serves a single request,
+    instead of silently misjudging printed codes.
+    """
+    for format_id, expected_fingerprint in frozen:
+        actual_fingerprint = get_format(format_id).fingerprint()
+        if actual_fingerprint != expected_fingerprint:
+            raise FormatRegistryError(
+                f"format {format_id!r} has changed since it was frozen "
+                f"(expected fingerprint {expected_fingerprint}, "
+                f"code now computes {actual_fingerprint}); printed codes "
+                "under this format can no longer be trusted"
+            )
+
+
 @dataclass(frozen=True, slots=True)
 class ParsedCode:
     """A syntactically valid code whose check character matches."""

@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import timedelta
@@ -16,6 +17,7 @@ from app.application.unit_of_work import UnitOfWork
 from app.application.wallets import WalletService
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
+from app.domain.codes import verify_frozen_formats
 from app.infrastructure.authentication import (
     SecureAuthenticationCodeGenerator,
     SystemClock,
@@ -30,6 +32,8 @@ from app.infrastructure.postgres.repositories import (
     PostgreSQLWalletReader,
 )
 from app.infrastructure.postgres.unit_of_work import SqlAlchemyUnitOfWork
+
+logger = logging.getLogger(__name__)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -81,6 +85,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        try:
+            frozen_formats = await database.frozen_batch_formats()
+        except Exception as error:  # noqa: BLE001 - DB down is /ready's job, not a crash
+            logger.warning("startup code-format check skipped: %s", error)
+        else:
+            verify_frozen_formats(frozen_formats)
         yield
         await database.dispose()
 

@@ -6,11 +6,19 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import select, update
 
+from app.app import create_app
 from app.core.config import Settings
 from app.domain.code_batches import BatchEventType, BatchStatus
-from app.domain.codes import V2_B10, CodeFormat, register_format, unregister_format
+from app.domain.codes import (
+    V2_B10,
+    CodeFormat,
+    FormatRegistryError,
+    register_format,
+    unregister_format,
+)
 from app.domain.passports import CityCode
 from app.infrastructure.postgres.database import PostgreSQLAdapter
 from app.infrastructure.postgres.models import CodeBatchEventModel, CodeBatchModel
@@ -164,3 +172,50 @@ async def test_list_formats_includes_every_registered_format() -> None:
         assert any(line.startswith("listing-test") for line in lines)
     finally:
         unregister_format("listing-test")
+
+
+async def test_frozen_batch_formats_reports_only_frozen_rows(
+    database: PostgreSQLAdapter, tmp_path: Path
+) -> None:
+    unfrozen_id = await make_batch(database, tmp_path, "unfrozen")
+    frozen_id = await make_batch(database, tmp_path, "frozen")
+    await freeze_batch(database.session_factory, frozen_id)
+
+    pairs = await database.frozen_batch_formats()
+
+    assert (V2_B10.format_id, V2_B10.fingerprint()) in pairs
+    async with database.session_factory() as session:
+        unfrozen = await session.get(CodeBatchModel, unfrozen_id)
+    assert unfrozen is not None and unfrozen.frozen_at is None
+
+
+async def test_app_startup_fails_loudly_when_a_frozen_format_has_drifted(
+    database: PostgreSQLAdapter, tmp_path: Path, test_database_url: str
+) -> None:
+    """A tampered/renamed format must block startup, not fail silently."""
+    batch_id = await make_batch(database, tmp_path, "drifted")
+    await freeze_batch(database.session_factory, batch_id)
+    correct_fingerprint = V2_B10.fingerprint()
+    async with database.session_factory() as session, session.begin():
+        await session.execute(
+            update(CodeBatchModel)
+            .where(CodeBatchModel.id == batch_id)
+            .values(format_fingerprint="0" * 64)
+        )
+    try:
+        settings = Settings(database_url=test_database_url, _env_file=None)
+        with (
+            pytest.raises(FormatRegistryError, match="has changed since it was frozen"),
+            TestClient(create_app(settings)),
+        ):
+            pass
+    finally:
+        # This row is shared, real database state: every other test that
+        # boots the app against the same database runs this startup check
+        # too, so a tampered fingerprint must never outlive this test.
+        async with database.session_factory() as session, session.begin():
+            await session.execute(
+                update(CodeBatchModel)
+                .where(CodeBatchModel.id == batch_id)
+                .values(format_fingerprint=correct_fingerprint)
+            )
