@@ -16,7 +16,14 @@ class PostgreSQLAdapter(ReadinessPort):
     def __init__(self, settings: Settings) -> None:
         self.engine: AsyncEngine = create_async_engine(
             settings.database_url,
-            connect_args={"timeout": settings.db_connect_timeout_seconds},
+            connect_args={
+                "timeout": settings.db_connect_timeout_seconds,
+                # A runaway query fails instead of holding a connection forever.
+                "server_settings": {
+                    "statement_timeout": str(settings.db_statement_timeout_ms),
+                    "timezone": "UTC",
+                },
+            },
             pool_pre_ping=True,
         )
         self.session_factory = async_sessionmaker(

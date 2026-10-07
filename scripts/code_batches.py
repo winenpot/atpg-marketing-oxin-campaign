@@ -2,9 +2,9 @@
 
 Usage::
 
-    uv run python scripts/code_batches.py list
-    uv run python scripts/code_batches.py activate <batch-id>
-    uv run python scripts/code_batches.py void <batch-id>
+    uv run python -m scripts.code_batches list
+    uv run python -m scripts.code_batches activate <batch-id>
+    uv run python -m scripts.code_batches void <batch-id>
 
 ``activate`` makes a ``generated`` batch redeemable. ``void`` stops every
 unredeemed code of a batch immediately (leaked printer file, misprint);

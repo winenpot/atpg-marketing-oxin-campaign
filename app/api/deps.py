@@ -1,8 +1,9 @@
 from typing import Annotated, cast
 
-from fastapi import Depends, HTTPException, Request, Security, status
+from fastapi import Depends, Request, Security, status
 from fastapi.security import APIKeyCookie
 
+from app.api.errors import ApiError
 from app.application.authentication import AuthenticationError, AuthenticationService
 from app.application.passports import PassportService
 from app.application.ports import ReadinessChecker
@@ -44,7 +45,6 @@ async def get_current_user(
     try:
         return await service.get_current_user(session_token)
     except AuthenticationError as error:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="authentication required",
+        raise ApiError(
+            status.HTTP_401_UNAUTHORIZED, "AUTH_REQUIRED", "authentication required"
         ) from error

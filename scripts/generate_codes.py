@@ -2,12 +2,12 @@
 
 Creates a ``code_batches`` row with status ``generated`` (NOT redeemable),
 inserts only the keyed hash of each code, and writes the plaintext codes to
-a CSV for the printer. Activate the batch with ``scripts/code_batches.py``
+a CSV for the printer. Activate the batch with ``python -m scripts.code_batches``
 when the product reaches the venues.
 
 Usage (one city per batch, one batch per print run)::
 
-    uv run python scripts/generate_codes.py --city tokyo --quantity 50000 \
+    uv run python -m scripts.generate_codes --city tokyo --quantity 50000 \
         --coins-per-code 10 --label "Tokyo can, first run" \
         --base-url https://play.example.ir \
         --output var/redemption-codes/tokyo-run1.csv
@@ -196,7 +196,7 @@ async def main_async(arguments: argparse.Namespace) -> None:
     )
     print(
         "status is 'generated' (not redeemable). Activate it at launch with "
-        f"scripts/code_batches.py activate {batch_id}",
+        f"python -m scripts.code_batches activate {batch_id}",
         file=sys.stderr,
     )
     print(

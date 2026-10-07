@@ -41,3 +41,11 @@ async def api_error_handler(_: Request, error: Exception) -> JSONResponse:
         content={"error": {"code": error.code, "message": error.message}},
         headers=headers,
     )
+
+
+async def unhandled_error_handler(_: Request, __: Exception) -> JSONResponse:
+    """Last resort: same envelope, no internals. The exception is still logged."""
+    return JSONResponse(
+        status_code=500,
+        content={"error": {"code": "INTERNAL_ERROR", "message": "internal error"}},
+    )

@@ -30,6 +30,8 @@ class Settings(BaseSettings):
         default="postgresql+asyncpg://postgres:postgres@localhost:5432/lottery_passport"
     )
     db_connect_timeout_seconds: int = Field(default=5, ge=1, le=60)
+    # Applied to every API/worker connection; migrations use their own engine.
+    db_statement_timeout_ms: int = Field(default=15_000, ge=100, le=600_000)
     cors_origins: str = '["http://localhost:3000"]'
 
     model_config = SettingsConfigDict(

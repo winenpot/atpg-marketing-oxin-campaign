@@ -5,7 +5,7 @@ from datetime import timedelta
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.errors import ApiError, api_error_handler
+from app.api.errors import ApiError, api_error_handler, unhandled_error_handler
 from app.api.middleware import RateLimitMiddleware, RequestLoggingMiddleware
 from app.api.routes import router
 from app.application.authentication import AuthenticationService, AuthenticationSettings
@@ -102,6 +102,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     application.add_middleware(RequestLoggingMiddleware)
     application.add_exception_handler(ApiError, api_error_handler)
+    application.add_exception_handler(Exception, unhandled_error_handler)
     application.include_router(router)
     application.state.readiness_checker = readiness_checker
     application.state.authentication_service = authentication_service

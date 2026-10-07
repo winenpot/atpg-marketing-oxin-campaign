@@ -47,7 +47,7 @@ class RateLimitMiddleware:
         await self.app(scope, receive, send)
 
     async def _send_limited(self, send: Send) -> None:
-        body = b'{"detail":"rate limit exceeded"}'
+        body = b'{"error":{"code":"RATE_LIMITED","message":"rate limit exceeded"}}'
         await send(
             {
                 "type": "http.response.start",
