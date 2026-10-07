@@ -1,100 +1,132 @@
 # Lottery Passport
 
-Phase 2 provides identity and passwordless authentication on top of the
-deployable Phase 1 backend foundation:
-FastAPI, typed settings, async PostgreSQL access, Alembic, health/readiness
-checks, CI quality gates, lightweight users, sessions, and authentication
-challenges. Campaign and product behavior is intentionally deferred.
+Backend for a brand-awareness game played at three gaming lounges: players scan the code
+under the cap of a city-named drink (Tokyo, Moscow, Paris, ...) and collect **entries** in that
+city's trip draw plus **coins** for challenges, tournaments and leaderboards.
+FastAPI + PostgreSQL, hexagonal architecture, deployed on a domestic VM with Docker Compose.
 
-## Local setup
+## Contents
 
-The project uses Python 3.13+ and `uv` for reproducible dependency management.
+- [Documentation map](#documentation-map)
+- [Quick start](#quick-start)
+- [Configuration](#configuration)
+- [Everyday commands](#everyday-commands)
+- [Project layout](#project-layout)
+- [Troubleshooting](#troubleshooting)
+- [Status and known limitations](#status-and-known-limitations)
 
-```powershell
-uv venv --python 3.13
+## Documentation map
+
+| If you want to... | Read |
+|---|---|
+| Know what happens on which day until launch | [ROADMAP.md](ROADMAP.md) |
+| Know what *you* have to do | [docs/TODO.md](docs/TODO.md) |
+| Understand the system and its data | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/adr/](docs/adr/) |
+| Build the frontend | [docs/API_CONTRACT.md](docs/API_CONTRACT.md), [docs/frontend/](docs/frontend/) |
+| Print codes / talk to the factory | [docs/CODES.md](docs/CODES.md) |
+| Run, deploy, back up, fix production | [docs/OPERATIONS.md](docs/OPERATIONS.md), [deploy/](deploy/) |
+| Keep it safe | [docs/SECURITY.md](docs/SECURITY.md) |
+| Test it | [docs/TESTING.md](docs/TESTING.md) |
+| Design challenges and the economy | [docs/GAMIFICATION.md](docs/GAMIFICATION.md) |
+| Run a draw nobody can call rigged | [docs/DRAW.md](docs/DRAW.md) |
+| Know who does what | [docs/TEAM.md](docs/TEAM.md) |
+| Avoid the classic traps | [docs/GOTCHAS.md](docs/GOTCHAS.md) |
+| See what was wrong with the first version | [docs/REPO_REVIEW.md](docs/REPO_REVIEW.md) |
+
+## Quick start
+
+Requirements: Python 3.13+ and [`uv`](https://docs.astral.sh/uv/); Docker for the local database.
+
+```bash
 uv sync
-Copy-Item .env.example .env
-```
-
-For local development, `.env` may point to the Compose PostgreSQL service from
-the host using `localhost`:
-
-```text
-postgresql+asyncpg://postgres:postgres@localhost:5432/lottery_passport
-```
-
-Start PostgreSQL with an existing local installation or a development container:
-
-```powershell
-docker run --name lottery-passport-postgres `
-	-e POSTGRES_PASSWORD=postgres `
-	-e POSTGRES_DB=lottery_passport `
-	-p 5432:5432 -d postgres:16
-```
-
-Run migrations and start the API:
-
-```powershell
+cp .env.example .env              # PowerShell: Copy-Item .env.example .env
+docker compose up -d postgres     # or any local PostgreSQL 16
 uv run alembic upgrade head
 uv run uvicorn main:app --reload
 ```
 
-The API is available at `http://127.0.0.1:8000`. OpenAPI is at
-`http://127.0.0.1:8000/docs`.
+The API is at `http://127.0.0.1:8000`, its interactive docs at `/docs` (development only).
+Set `REDEMPTION_CODE_PEPPER` in `.env` to any 32+ character string for local redemption.
 
-For development authentication, call `POST /api/v1/auth/request`, then read
-the generated code from the in-memory development email adapter in tests. A
-real email provider must be configured before enabling passwordless login for
-deployed users.
+Try a redemption locally:
 
-## Checks
-
-Unit and API tests do not require PostgreSQL. To run the PostgreSQL integration
-test, set `TEST_DATABASE_URL` to a dedicated test database first.
-
-```powershell
-uv run pytest
-uv run ruff check .
-uv run ruff format --check .
-uv run mypy app main.py
+```bash
+uv run python -m scripts.generate_codes --city tokyo --quantity 20 --coins-per-code 10 \
+    --label "local test" --base-url http://localhost:5173 --output var/redemption-codes/local.csv
+uv run python -m scripts.code_batches list
+uv run python -m scripts.code_batches activate <batch-id>
 ```
 
-Format code with `uv run ruff format .`.
+Sign in through `POST /api/v1/auth/request` + `/verify` (the development sender keeps the
+last code in memory; phone sign-in replaces this with B10), then `POST /api/v1/redemptions`
+with one of the codes from the CSV.
 
 ## Configuration
 
-Configuration is read from environment variables or `.env`. See
-[`.env.example`](.env.example). Secrets must remain outside source control.
-`CORS_ORIGINS` is a JSON array of explicitly permitted origins or `*` for
-machine-to-machine use without browser credentials. `API_KEY` is a
-secret for future internal/admin routes and is compared in constant time; it is
-not required for `/health` or `/ready`. Demo, staging, and production require
-`API_KEY` and an external `DATABASE_URL`. Render's standard `postgresql://`
-URI is normalized to the async `asyncpg` driver automatically.
+All settings are environment variables (or `.env`), validated at startup by
+`app/core/config.py`. Templates: [.env.example](.env.example) (local) and
+[deploy/.env.production.example](deploy/.env.production.example) (servers).
 
-The current rate limiter is process-local and keyed by the direct client IP.
-It is appropriate for the single-container demo, but distributed deployments
-should move rate-limit state to a shared store such as Redis before scaling the
-API horizontally.
+| Variable | Purpose |
+|---|---|
+| `ENVIRONMENT` | `development`, `staging` or `production`; production refuses unsafe settings |
+| `DATABASE_URL` | `postgresql+asyncpg://...` (plain `postgresql://` is converted) |
+| `REDEMPTION_CODE_PEPPER` | Secret key for code hashes, 32+ characters outside development. **Never change it after printing** |
+| `REDEMPTION_DAILY_LIMIT_PER_USER` | Codes one player may redeem per Tehran day (default 20) |
+| `CAMPAIGN_TIMEZONE` | Game days and weeks (default `Asia/Tehran`) |
+| `DB_STATEMENT_TIMEOUT_MS` | Kills runaway queries (default 15000) |
+| `API_KEY` | Server-to-server key, required outside development |
+| `SESSION_COOKIE_NAME`, `AUTH_*` | Sessions and one-time codes |
+| `RATE_LIMIT_*` | In-process backstop limiter; real limits live in nginx |
+| `CORS_ORIGINS` | Only needed when the frontend is on another origin (production is same-origin) |
+| `LOG_LEVEL`, `LOG_JSON` | Logging |
 
-Application logs use standard Python logging and structured JSON on stdout.
-Each HTTP response includes an `X-Request-ID`, and request logs include that ID,
-method, path, status, latency, and client IP. Credentials and request headers
-are deliberately excluded. This output can be collected by Render or forwarded
-to Logfire later without adding a Logfire dependency to the application.
+## Everyday commands
 
-## Architecture
+```bash
+uv run pytest                                   # tests (integration tests need TEST_DATABASE_URL)
+uv run ruff check . && uv run ruff format --check . && uv run mypy app main.py scripts
+uv run alembic revision -m "describe change"     # new migration (write it by hand, review it)
+uv run python -m scripts.code_batches list       # batches and how many codes were redeemed
+```
 
-`app/application` owns use cases and ports. `app/infrastructure` owns database
-adapters. `app/api` owns HTTP routes and response models. The application
-factory wires adapters into application services; no route creates connections
-directly. Alembic is run as an explicit deployment step and is never invoked at
-startup.
+Integration tests run against a real, migrated PostgreSQL: see [docs/TESTING.md](docs/TESTING.md#running-the-tests).
+After changing dependencies, regenerate the hash-locked file the Docker image uses:
+`uv export --locked --no-dev --no-emit-project --no-header --format requirements-txt -o requirements.txt`.
 
-## Deployment sequence
+## Project layout
 
-For a deployment, install dependencies, set `ENVIRONMENT` to `demo`, `staging`,
-or `production`, provide `DATABASE_URL` with the managed PostgreSQL URI and
-credentials, run `alembic upgrade head`, then start Uvicorn without reload
-mode. Non-development environments reject local database hosts, so Compose's
-PostgreSQL service cannot become the production database accidentally.
+```text
+app/domain/          pure rules: code format, batches, ledger, passports, draw
+app/application/     use cases and ports (unit of work, redemption, wallets, auth)
+app/infrastructure/  PostgreSQL models, read repositories, unit of work adapter
+app/api/             FastAPI routers, schemas, error envelope
+scripts/             generate_codes, code_batches, loadtest_sessions (run with python -m)
+alembic/versions/    database migrations (applied by deploy, never on startup)
+deploy/              production Compose file, nginx, deploy/backup/restore scripts
+loadtest/            k6 load test
+docs/                everything in the documentation map
+tests/               unit (fakes) and integration (PostgreSQL) tests
+```
+
+## Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| `No module named 'app'` when running a script | Run scripts as modules: `uv run python -m scripts.generate_codes ...` |
+| Integration tests are skipped | `TEST_DATABASE_URL` is not set, or the database is not migrated (`alembic upgrade head`) |
+| `REDEMPTION_NOT_CONFIGURED` from the API | `REDEMPTION_CODE_PEPPER` is empty |
+| Production refuses to start: "REDEMPTION_CODE_PEPPER must be at least 32 characters" | Generate one: `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
+| Codes from one environment do not work in another | Each environment has its own pepper and database, by design |
+| Every player in a lounge gets `429` | The lounge's public IP is missing from `lounge_ips.conf` ([OPERATIONS.md](docs/OPERATIONS.md#nginx)) |
+| Docker cannot pull base images on the server | Docker Hub refuses Iranian IPs: configure a domestic mirror ([OPERATIONS.md](docs/OPERATIONS.md#getting-images-and-packages-onto-the-server)) |
+
+## Status and known limitations
+
+Done: v2 codes, batches with activate/void, atomic and idempotent redemption with a daily cap,
+append-only coin ledger and wallet, error envelope, reproducible draw algorithm, production
+deployment files, load-test tooling. 131 automated tests, including concurrency tests on PostgreSQL.
+
+Not yet: phone/SMS sign-in (still email; B10–B11), profile and lounges, challenges,
+submissions, leaderboard, tournaments, admin panel. The day-by-day plan is in [ROADMAP.md](ROADMAP.md).
+`render.yaml` is the original demo deployment and is not used for the campaign.

@@ -30,16 +30,24 @@ adapters in integration tests.
 
 ## Current boundaries
 
-The Phase 1 readiness check and Phase 2 authentication service demonstrate the
-pattern: application behavior owns use cases, protocols define required
-capabilities, and PostgreSQL/email adapters supply infrastructure
-implementations. `AuthenticationService` must remain independent of FastAPI,
-SQLAlchemy, and email vendors.
+- Multi-table writes go through the unit of work port
+  (`app/application/unit_of_work.py`, adapter in
+  `app/infrastructure/postgres/unit_of_work.py`): one transaction, explicit
+  `commit()`, rollback otherwise. Redemption is the reference use case.
+- Coins: append-only `coin_ledger_entries` (unique `idempotency_key`, a
+  trigger rejects UPDATE/DELETE) plus `wallets.balance` updated in the same
+  transaction. Never change a balance any other way.
+- Printed codes: format v2 in `app/domain/codes.py` (frozen once printed);
+  codes belong to `code_batches` and are redeemable only while `active`.
+- Seven city passports (Paris, Berlin, Pattaya, Mexico, Madrid, Tokyo,
+  Moscow); `passport_progress.points` counts entries in that city's draw.
+- Simple reads and admin CRUD do not need a port per table; add one when a
+  second real caller appears.
+- `AuthenticationService` stays independent of FastAPI, SQLAlchemy and SMS
+  vendors.
 
-The future model has seven campaign/product passports: Paris, Berlin, Pattaya,
-Mexico, Madrid, Tokyo, and Moscow. Model progress as multiple user passports,
-not a single generic `User.passport_points` field. Do not implement that domain
-yet without an explicit task.
+Read `ROADMAP.md`, `docs/ARCHITECTURE.md` and `docs/API_CONTRACT.md` before
+changing behavior; update them (and any diagram) in the same commit.
 
 ## Working rules
 
@@ -50,6 +58,14 @@ yet without an explicit task.
 - Add unit tests for application/domain behavior and integration tests for
   adapters and database guarantees.
 - Run `uv run ruff check .`, `uv run ruff format --check .`,
-  `uv run mypy app main.py`, and `uv run pytest` before completing changes.
+  `uv run mypy app main.py scripts`, and `uv run pytest` (with
+  `TEST_DATABASE_URL` pointing at a migrated database so the integration and
+  concurrency tests run) before completing changes.
+- Run scripts as modules: `uv run python -m scripts.<name>`.
+- After dependency changes, regenerate `requirements.txt` with
+  `uv export --locked --no-dev --no-emit-project --no-header --format requirements-txt -o requirements.txt`.
+- Migrations during the campaign are additive only (expand, migrate, contract).
+- If `app/domain/codes.py` changes, update `docs/frontend/codes.js` and
+  `docs/frontend/code-test-vectors.json` together.
 - Use Alembic for every schema change. Never migrate automatically on app
   startup.

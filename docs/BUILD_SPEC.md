@@ -1,3 +1,8 @@
+> **Historical document.** This is the original build brief (September 2026). The campaign
+> has since changed: phone/SMS sign-in instead of email, domestic hosting instead of Render,
+> coins, challenges and tournaments. Where this file disagrees with `ROADMAP.md`,
+> `docs/ARCHITECTURE.md` or `docs/adr/`, the newer documents win.
+
 # Backend Engineering Specification: Campaign, Product Passport & Gamification Platform
 
 You are acting as a senior backend engineer, software architect, security engineer, database designer, test engineer, and DevOps engineer.
