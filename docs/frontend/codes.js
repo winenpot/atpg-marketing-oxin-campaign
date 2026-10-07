@@ -1,9 +1,34 @@
-// Browser-side mirror of app/domain/codes.py (parse only; generation stays on the server).
-const ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+// Browser-side mirror of app/domain/codes.py (parse only; generation stays
+// on the server). Formats mirror docs/frontend/code-formats.json; keep both
+// in sync with app/domain/codes.py (see docs/CODES.md#adding-a-code-format).
+
+export const FORMATS = {
+  "v2-b10": {
+    formatId: "v2-b10",
+    alphabet: "0123456789ABCDEFGHJKMNPQRSTVWXYZ",
+    bodyLength: 10,
+    grouping: [4, 4, 3],
+    aliases: { O: "0", I: "1", L: "1" },
+  },
+};
+
+export const DEFAULT_FORMAT_ID = "v2-b10";
+
 const CITY_CHECK_INDEX = { PR: 1, BE: 2, PA: 3, ME: 4, MA: 5, TO: 6, MO: 7 };
-const ALIASES = { O: "0", I: "1", L: "1" };
 const EASTERN_DIGITS = /[۰-۹٠-٩]/g;
 const SEPARATORS = /[\p{Zs}\p{Pd}\p{Cf}\t\r\n_.]/gu;
+const PREFIX_LENGTH = 2;
+
+function canonicalLength(format) {
+  return PREFIX_LENGTH + format.bodyLength + 1;
+}
+
+function formatsByLength() {
+  return Object.values(FORMATS).reduce((byLength, format) => {
+    byLength.set(canonicalLength(format), format);
+    return byLength;
+  }, new Map());
+}
 
 function toAsciiDigit(character) {
   const code = character.charCodeAt(0);
@@ -18,34 +43,60 @@ export function normalizeCode(raw) {
     .toUpperCase();
 }
 
-function luhnMod32Sum(values, startFactor) {
+function luhnModNSum(values, startFactor, base) {
   let factor = startFactor;
   let total = 0;
   for (let i = values.length - 1; i >= 0; i -= 1) {
     const addend = factor * values[i];
-    total += Math.floor(addend / 32) + (addend % 32);
+    total += Math.floor(addend / base) + (addend % base);
     factor = factor === 2 ? 1 : 2;
   }
   return total;
 }
 
-// Returns {ok: true, city, canonical} or {ok: false, problem: "malformed" | "mistyped"}.
+function checkIsValid(prefix, body, check, format) {
+  const base = format.alphabet.length;
+  const values = [
+    CITY_CHECK_INDEX[prefix],
+    ...[...(body + check)].map((c) => format.alphabet.indexOf(c)),
+  ];
+  return luhnModNSum(values, 1, base) % base === 0;
+}
+
+// Returns {ok: true, city, canonical, formatId} or
+// {ok: false, problem: "malformed" | "mistyped"}.
 export function parseCode(raw) {
   const text = normalizeCode(raw);
-  if (text.length !== 13 || !/^[\x00-\x7F]*$/.test(text)) return { ok: false, problem: "malformed" };
-  const prefix = text.slice(0, 2).replaceAll("0", "O");
+  if (!/^[\x00-\x7F]*$/.test(text)) return { ok: false, problem: "malformed" };
+
+  const format = formatsByLength().get(text.length);
+  if (!format) return { ok: false, problem: "malformed" };
+
+  const prefix = text.slice(0, PREFIX_LENGTH).replaceAll("0", "O");
   if (!(prefix in CITY_CHECK_INDEX)) return { ok: false, problem: "malformed" };
-  const tail = [...text.slice(2)].map((c) => ALIASES[c] ?? c).join("");
-  if ([...tail].some((c) => !ALPHABET.includes(c))) return { ok: false, problem: "malformed" };
-  const values = [CITY_CHECK_INDEX[prefix], ...[...tail].map((c) => ALPHABET.indexOf(c))];
-  if (luhnMod32Sum(values, 1) % 32 !== 0) return { ok: false, problem: "mistyped" };
-  return { ok: true, city: prefix, canonical: prefix + tail };
+
+  const tail = [...text.slice(PREFIX_LENGTH)].map((c) => format.aliases[c] ?? c).join("");
+  if ([...tail].some((c) => !format.alphabet.includes(c))) {
+    return { ok: false, problem: "malformed" };
+  }
+
+  const body = tail.slice(0, format.bodyLength);
+  const check = tail.slice(format.bodyLength);
+  if (!checkIsValid(prefix, body, check, format)) {
+    return { ok: false, problem: "mistyped" };
+  }
+  return { ok: true, city: prefix, canonical: prefix + tail, formatId: format.formatId };
 }
 
 // "TO7KQ2M9XH4R6" -> "TO-7KQ2-M9XH-4R6" (also useful while the user types).
-export function formatPrinted(canonical) {
-  const rest = canonical.slice(2);
-  return [canonical.slice(0, 2), rest.slice(0, 4), rest.slice(4, 8), rest.slice(8)]
-    .filter(Boolean)
-    .join("-");
+export function formatPrinted(canonical, formatId = DEFAULT_FORMAT_ID) {
+  const format = FORMATS[formatId];
+  const rest = canonical.slice(PREFIX_LENGTH);
+  const parts = [canonical.slice(0, PREFIX_LENGTH)];
+  let position = 0;
+  for (const size of format.grouping) {
+    parts.push(rest.slice(position, position + size));
+    position += size;
+  }
+  return parts.filter(Boolean).join("-");
 }
