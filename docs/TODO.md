@@ -41,7 +41,8 @@ the item is closed; reopening it later goes through the swap rule.
 
 | ID | Due | Item | Done when |
 |---|---|---|---|
-| B01 | ✅ | Code format v2: city prefix + 10 Crockford Base32 + check character; normalization of Persian digits, case, separators, look-alikes | `tests/unit/test_codes.py` green; [CODES.md](CODES.md) agreed with the factory |
+| B01 | ✅ | Code format registry (`app/domain/codes.py`): `v2-b10` default (city prefix + 10 Crockford Base32 + check character); normalization of Persian digits, case, separators, look-alikes; pluggable `CodeFormat` dataclass so a second format (e.g. digits-only) is a one-file addition; browser mirror (`codes.js` + `code-formats.json`); cross-language parity tests (`codes.test.mjs`, `test_code_vectors.py`); startup drift guard for frozen batches | Tests green; [CODES.md](CODES.md) sec. 7 describes adding a format |
+| B01b | D5 | Roles: `users.role` column (player/staff/marketing/admin, migration 0007); `RoleChange` use case with append-only `role_change_events`; last-admin guard; `scripts.admins grant/revoke/list`; `require_role` API dependency; OPERATIONS.md runbook step. T2.3 builds the admin panel on these roles. | `scripts.admins list` shows at least one admin after first deploy; go-live checklist includes the check |
 | B02 | ✅ | Batch generator and batch CLI (`list`, `activate`, `void`) | A test batch generated, activated and voided on staging |
 | B03 | ✅ | Atomic redemption (one transaction), idempotent replay, daily cap in Tehran days | Concurrency tests green on PostgreSQL |
 | B04 | ✅ | Coin ledger (append-only), wallet, `GET /api/v1/me/wallet` | Ledger UPDATE/DELETE rejected by the database |

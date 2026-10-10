@@ -103,8 +103,8 @@ Hexagonal ("ports and adapters"), already established in this repository. Depend
 ```text
 app/
   domain/              pure rules, no frameworks
-    codes.py           code format v2, normalization, check character        (done)
-    code_batches.py    batch lifecycle                                       (done)
+    codes.py           code format registry, v2-b10 default, normalization, check (done)
+    code_batches.py    batch lifecycle                                                 (done)
     ledger.py          coin ledger entry types                               (done)
     passports.py       cities, campaigns, entries per code
     users.py, authentication.py
@@ -170,6 +170,11 @@ erDiagram
         string city
         int coins_per_code
         string status "generated, active, void"
+        string format_id "registered format; default v2-b10"
+        string format_fingerprint "set at freeze; guards against spec drift"
+        timestamptz exported_at
+        string export_sha256
+        timestamptz frozen_at
     }
     redemption_codes {
         uuid id PK
@@ -233,7 +238,13 @@ erDiagram
 
 Not drawn, all *planned*: `admin_users` (username, password hash, role, optional venue, TOTP),
 `audit_log` (actor, action, entity, JSON diff, IP, time), `jobs` (kind, payload, status,
-run_at, attempts, expires_at), `redemption_failures` (user, IP, time; for the throttle).
+run_at, attempts, expires_at), `redemption_failures` (user, IP, time; for the throttle),
+`role_change_events` (actor, target user, from_role, to_role, reason, when — append-only;
+see T1.1b in the implementation plan).
+
+Note: `users.role` (`player`, `staff`, `marketing`, `admin`) arrives with migration 0007
+(T1.1b). The `code_batch_events` append-only table (event_type, batch_id, actor, recorded_at)
+already exists from migration 0006.
 
 **Data dictionary highlights**
 
@@ -370,6 +381,7 @@ stateDiagram-v2
 | A voided batch stops working immediately | Batch status checked inside the claim statement | `test_codes_work_only_while_their_batch_is_active` |
 | A challenge pays once per period | `UNIQUE (challenge_id, user_id, period_key)` + ledger key (B17) | to write with B17 |
 | Staff cannot quietly change balances | Adjustments are ledger rows with `actor_id`; audit log (B20) | to write with B20 |
+| A frozen format spec never drifts silently | `verify_frozen_formats` on startup; fails loudly on mismatch | `test_startup_fails_if_frozen_format_drifts` (integration) |
 
 ## Time
 
