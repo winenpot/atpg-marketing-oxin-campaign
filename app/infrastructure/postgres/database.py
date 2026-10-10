@@ -1,4 +1,5 @@
 from typing import Self
+from urllib.parse import urlparse
 
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import (
@@ -13,18 +14,34 @@ from app.core.config import Settings
 from app.infrastructure.postgres.models import CodeBatchModel
 
 
+def _is_pgbouncer_url(database_url: str) -> bool:
+    """Return True when the URL uses the Supabase transaction pooler (port 6543).
+
+    PgBouncer in transaction mode does not support prepared statements; asyncpg
+    must have ``statement_cache_size=0`` to avoid 'prepared statement already exists'.
+    """
+    parsed = urlparse(database_url)
+    return parsed.port == 6543
+
+
 class PostgreSQLAdapter(ReadinessPort):
     def __init__(self, settings: Settings) -> None:
+        connect_args: dict[str, object] = {
+            "timeout": settings.db_connect_timeout_seconds,
+            # A runaway query fails instead of holding a connection forever.
+            "server_settings": {
+                "statement_timeout": str(settings.db_statement_timeout_ms),
+                "timezone": "UTC",
+            },
+        }
+        if _is_pgbouncer_url(settings.database_url):
+            # PgBouncer (transaction mode) does not support named prepared
+            # statements; disabling the cache avoids 'already exists' errors.
+            connect_args["statement_cache_size"] = 0
+
         self.engine: AsyncEngine = create_async_engine(
             settings.database_url,
-            connect_args={
-                "timeout": settings.db_connect_timeout_seconds,
-                # A runaway query fails instead of holding a connection forever.
-                "server_settings": {
-                    "statement_timeout": str(settings.db_statement_timeout_ms),
-                    "timezone": "UTC",
-                },
-            },
+            connect_args=connect_args,
             pool_pre_ping=True,
         )
         self.session_factory = async_sessionmaker(
