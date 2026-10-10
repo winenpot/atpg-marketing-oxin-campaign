@@ -3,19 +3,22 @@
   "input": "PRHCTYMCKXTYD",
   "note": "valid PARIS code",
   "ok": true,
-  "canonical": "PRHCTYMCKXTYD"
+  "canonical": "PRHCTYMCKXTYD",
+  "format_id": "v2-b10"
  },
  {
   "input": "PR-HCTY-MCKX-TYD",
   "note": "printed grouping",
   "ok": true,
-  "canonical": "PRHCTYMCKXTYD"
+  "canonical": "PRHCTYMCKXTYD",
+  "format_id": "v2-b10"
  },
  {
   "input": "pr-hcty-mckx-tyd",
   "note": "lowercase",
   "ok": true,
-  "canonical": "PRHCTYMCKXTYD"
+  "canonical": "PRHCTYMCKXTYD",
+  "format_id": "v2-b10"
  },
  {
   "input": "PRH0TYMCKXTYD",
@@ -27,19 +30,22 @@
   "input": "BEXX7MN2H781J",
   "note": "valid BERLIN code",
   "ok": true,
-  "canonical": "BEXX7MN2H781J"
+  "canonical": "BEXX7MN2H781J",
+  "format_id": "v2-b10"
  },
  {
   "input": "BE-XX7M-N2H7-81J",
   "note": "printed grouping",
   "ok": true,
-  "canonical": "BEXX7MN2H781J"
+  "canonical": "BEXX7MN2H781J",
+  "format_id": "v2-b10"
  },
  {
   "input": "be-xx7m-n2h7-81j",
   "note": "lowercase",
   "ok": true,
-  "canonical": "BEXX7MN2H781J"
+  "canonical": "BEXX7MN2H781J",
+  "format_id": "v2-b10"
  },
  {
   "input": "BEXX7MN0H781J",
@@ -51,19 +57,22 @@
   "input": "PAPPJ3TTK2E8V",
   "note": "valid PATTAYA code",
   "ok": true,
-  "canonical": "PAPPJ3TTK2E8V"
+  "canonical": "PAPPJ3TTK2E8V",
+  "format_id": "v2-b10"
  },
  {
   "input": "PA-PPJ3-TTK2-E8V",
   "note": "printed grouping",
   "ok": true,
-  "canonical": "PAPPJ3TTK2E8V"
+  "canonical": "PAPPJ3TTK2E8V",
+  "format_id": "v2-b10"
  },
  {
   "input": "pa-ppj3-ttk2-e8v",
   "note": "lowercase",
   "ok": true,
-  "canonical": "PAPPJ3TTK2E8V"
+  "canonical": "PAPPJ3TTK2E8V",
+  "format_id": "v2-b10"
  },
  {
   "input": "PAPPJ3TTK208V",
@@ -75,19 +84,22 @@
   "input": "ME2W23VEXXPK9",
   "note": "valid MEXICO code",
   "ok": true,
-  "canonical": "ME2W23VEXXPK9"
+  "canonical": "ME2W23VEXXPK9",
+  "format_id": "v2-b10"
  },
  {
   "input": "ME-2W23-VEXX-PK9",
   "note": "printed grouping",
   "ok": true,
-  "canonical": "ME2W23VEXXPK9"
+  "canonical": "ME2W23VEXXPK9",
+  "format_id": "v2-b10"
  },
  {
   "input": "me-2w23-vexx-pk9",
   "note": "lowercase",
   "ok": true,
-  "canonical": "ME2W23VEXXPK9"
+  "canonical": "ME2W23VEXXPK9",
+  "format_id": "v2-b10"
  },
  {
   "input": "ME2W23VEXX0K9",
@@ -99,19 +111,22 @@
   "input": "MAHQK7XK84NYF",
   "note": "valid MADRID code",
   "ok": true,
-  "canonical": "MAHQK7XK84NYF"
+  "canonical": "MAHQK7XK84NYF",
+  "format_id": "v2-b10"
  },
  {
   "input": "MA-HQK7-XK84-NYF",
   "note": "printed grouping",
   "ok": true,
-  "canonical": "MAHQK7XK84NYF"
+  "canonical": "MAHQK7XK84NYF",
+  "format_id": "v2-b10"
  },
  {
   "input": "ma-hqk7-xk84-nyf",
   "note": "lowercase",
   "ok": true,
-  "canonical": "MAHQK7XK84NYF"
+  "canonical": "MAHQK7XK84NYF",
+  "format_id": "v2-b10"
  },
  {
   "input": "MAHQK7XK84NY0",
@@ -123,19 +138,22 @@
   "input": "TOSK2QBHRKGMX",
   "note": "valid TOKYO code",
   "ok": true,
-  "canonical": "TOSK2QBHRKGMX"
+  "canonical": "TOSK2QBHRKGMX",
+  "format_id": "v2-b10"
  },
  {
   "input": "TO-SK2Q-BHRK-GMX",
   "note": "printed grouping",
   "ok": true,
-  "canonical": "TOSK2QBHRKGMX"
+  "canonical": "TOSK2QBHRKGMX",
+  "format_id": "v2-b10"
  },
  {
   "input": "to-sk2q-bhrk-gmx",
   "note": "lowercase",
   "ok": true,
-  "canonical": "TOSK2QBHRKGMX"
+  "canonical": "TOSK2QBHRKGMX",
+  "format_id": "v2-b10"
  },
  {
   "input": "TOS02QBHRKGMX",
@@ -147,19 +165,22 @@
   "input": "MOY0WFPG6S0YD",
   "note": "valid MOSCOW code",
   "ok": true,
-  "canonical": "MOY0WFPG6S0YD"
+  "canonical": "MOY0WFPG6S0YD",
+  "format_id": "v2-b10"
  },
  {
   "input": "MO-Y0WF-PG6S-0YD",
   "note": "printed grouping",
   "ok": true,
-  "canonical": "MOY0WFPG6S0YD"
+  "canonical": "MOY0WFPG6S0YD",
+  "format_id": "v2-b10"
  },
  {
   "input": "mo-y0wf-pg6s-0yd",
   "note": "lowercase",
   "ok": true,
-  "canonical": "MOY0WFPG6S0YD"
+  "canonical": "MOY0WFPG6S0YD",
+  "format_id": "v2-b10"
  },
  {
   "input": "MOY0W0PG6S0YD",
@@ -171,25 +192,29 @@
   "input": "TO۷J۸QA۹۶F۷۹R",
   "note": "Persian digits",
   "ok": true,
-  "canonical": "TO7J8QA96F79R"
+  "canonical": "TO7J8QA96F79R",
+  "format_id": "v2-b10"
  },
  {
   "input": "TO٧J٨QA٩٦F٧٩R",
   "note": "Arabic-Indic digits",
   "ok": true,
-  "canonical": "TO7J8QA96F79R"
+  "canonical": "TO7J8QA96F79R",
+  "format_id": "v2-b10"
  },
  {
   "input": " TO–7J8Q–A96F–79R‌",
   "note": "en dashes, spaces, ZWNJ",
   "ok": true,
-  "canonical": "TO7J8QA96F79R"
+  "canonical": "TO7J8QA96F79R",
+  "format_id": "v2-b10"
  },
  {
   "input": "T07J8QA96F79R",
   "note": "zero typed for O in prefix",
   "ok": true,
-  "canonical": "TO7J8QA96F79R"
+  "canonical": "TO7J8QA96F79R",
+  "format_id": "v2-b10"
  },
  {
   "input": "MO7J8QA96F79R",
@@ -237,6 +262,7 @@
   "input": "PROIL0000000V",
   "note": "O, I and L typed for 0, 1 and 1",
   "ok": true,
-  "canonical": "PR0110000000V"
+  "canonical": "PR0110000000V",
+  "format_id": "v2-b10"
  }
 ]
