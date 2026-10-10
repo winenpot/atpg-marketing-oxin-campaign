@@ -265,3 +265,21 @@ class CoinLedgerEntryModel(Base):
         Index("ix_coin_ledger_entries_user_time", "user_id", "created_at"),
         Index("ix_coin_ledger_entries_created_at", "created_at"),
     )
+
+
+class RedemptionFailureModel(Base):
+    """Append-only log of CODE_INVALID outcomes, used by the per-account throttle."""
+
+    __tablename__ = "redemption_failures"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_redemption_failures_user_time", "user_id", "occurred_at"),
+    )

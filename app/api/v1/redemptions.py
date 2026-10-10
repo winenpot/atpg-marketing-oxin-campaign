@@ -40,6 +40,10 @@ _ERRORS: dict[RedemptionErrorCode, tuple[int, str]] = {
         status.HTTP_429_TOO_MANY_REQUESTS,
         "Daily redemption limit reached; try again tomorrow.",
     ),
+    RedemptionErrorCode.ATTEMPTS_LIMITED: (
+        status.HTTP_429_TOO_MANY_REQUESTS,
+        "Too many failed attempts; try again later.",
+    ),
 }
 
 
@@ -64,7 +68,12 @@ async def redeem_code(
         result = await service.redeem(current_user.id, payload.code)
     except RedemptionError as error:
         status_code, message = _ERRORS[error.code]
-        raise ApiError(status_code, error.code.value, message) from error
+        raise ApiError(
+            status_code,
+            error.code.value,
+            message,
+            retry_after_seconds=error.retry_after,
+        ) from error
     return RedemptionResponse.from_result(result)
 
 

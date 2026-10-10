@@ -10,6 +10,7 @@ from app.api.errors import ApiError, api_error_handler, unhandled_error_handler
 from app.api.middleware import RateLimitMiddleware, RequestLoggingMiddleware
 from app.api.routes import router
 from app.application.authentication import AuthenticationService, AuthenticationSettings
+from app.application.failure_throttle import ThrottleSettings
 from app.application.passports import PassportService
 from app.application.ports import ReadinessChecker
 from app.application.redemption_codes import RedemptionService
@@ -24,6 +25,7 @@ from app.infrastructure.authentication import (
 )
 from app.infrastructure.email import DevelopmentEmailSender, UnavailableEmailSender
 from app.infrastructure.postgres.database import PostgreSQLAdapter
+from app.infrastructure.postgres.failure_throttle import PostgreSQLFailureThrottle
 from app.infrastructure.postgres.repositories import (
     PostgreSQLChallengeRepository,
     PostgreSQLPassportRepository,
@@ -78,6 +80,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         ),
         daily_limit=resolved_settings.redemption_daily_limit_per_user,
         campaign_zone=resolved_settings.campaign_zone,
+        throttle=PostgreSQLFailureThrottle(database.session_factory),
+        throttle_settings=ThrottleSettings(
+            max_attempts=resolved_settings.redemption_max_invalid_attempts_per_hour,
+            window_seconds=3600,
+        ),
     )
     wallet_service = WalletService(
         wallets=PostgreSQLWalletReader(database.session_factory)

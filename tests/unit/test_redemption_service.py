@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from app.application.failure_throttle import ThrottleSettings
 from app.application.redemption_codes import (
     RedemptionError,
     RedemptionErrorCode,
@@ -163,8 +164,25 @@ class FakeClock:
         return self.current
 
 
+@dataclass
+class FakeThrottle:
+    failures: list[tuple[UUID, datetime]] = field(default_factory=list)
+
+    async def record(self, user_id: UUID, occurred_at: datetime) -> None:
+        self.failures.append((user_id, occurred_at))
+
+    async def count_in_window(self, user_id: UUID, window_start: datetime) -> int:
+        return sum(
+            1 for uid, t in self.failures if uid == user_id and t >= window_start
+        )
+
+
 def build(
-    *, daily_limit: int = 20, now: datetime | None = None
+    *,
+    daily_limit: int = 20,
+    now: datetime | None = None,
+    throttle: FakeThrottle | None = None,
+    max_invalid_attempts: int = 10,
 ) -> tuple[RedemptionService, Store, FakeClock]:
     store = Store()
     clock = FakeClock(now or datetime(2026, 10, 10, 12, 0, tzinfo=UTC))
@@ -174,6 +192,10 @@ def build(
         pepper=PEPPER,
         daily_limit=daily_limit,
         campaign_zone=TEHRAN,
+        throttle=throttle,
+        throttle_settings=ThrottleSettings(
+            max_attempts=max_invalid_attempts, window_seconds=3600
+        ),
     )
     return service, store, clock
 
@@ -342,3 +364,81 @@ async def test_missing_pepper_fails_closed() -> None:
 def test_hash_is_keyed_by_the_pepper() -> None:
     assert hash_redemption_code("TO1", "a") == hash_redemption_code("TO1", "a")
     assert hash_redemption_code("TO1", "a") != hash_redemption_code("TO1", "b")
+
+
+# ---------------------------------------------------------------------------
+# Per-account invalid-code throttle
+# ---------------------------------------------------------------------------
+
+
+async def test_invalid_code_is_recorded_in_the_throttle() -> None:
+    throttle = FakeThrottle()
+    service, store, _ = build(throttle=throttle)
+    user = uuid4()
+    body = "7KQ2M9XH4R"
+    bad_code = f"TO{body}{ALPHABET[compute_check_value(CityCode.TOKYO, body)]}"
+    # make the hash unknown so it becomes CODE_INVALID
+    with pytest.raises(RedemptionError) as raised:
+        await service.redeem(user, bad_code)
+
+    assert raised.value.code is RedemptionErrorCode.INVALID
+    assert len(throttle.failures) == 1
+    assert throttle.failures[0][0] == user
+
+
+async def test_malformed_code_does_not_count_against_the_throttle() -> None:
+    throttle = FakeThrottle()
+    service, _, _ = build(throttle=throttle)
+    with pytest.raises(RedemptionError) as raised:
+        await service.redeem(uuid4(), "not-a-code")
+    assert raised.value.code is RedemptionErrorCode.MALFORMED
+    assert throttle.failures == []
+
+
+async def test_eleventh_invalid_attempt_is_refused_before_db_work() -> None:
+    throttle = FakeThrottle()
+    service, store, _ = build(throttle=throttle, max_invalid_attempts=10)
+    user = uuid4()
+    body = "7KQ2M9XH4R"
+    bad_code = f"TO{body}{ALPHABET[compute_check_value(CityCode.TOKYO, body)]}"
+
+    # burn 10 failures
+    for _ in range(10):
+        with pytest.raises(RedemptionError):
+            await service.redeem(user, bad_code)
+
+    assert len(throttle.failures) == 10
+
+    # 11th attempt is blocked before touching the store
+    with pytest.raises(RedemptionError) as raised:
+        await service.redeem(user, bad_code)
+
+    assert raised.value.code is RedemptionErrorCode.ATTEMPTS_LIMITED
+    assert raised.value.retry_after == 3600
+    assert len(throttle.failures) == 10  # no new failure recorded when throttled
+
+
+async def test_throttle_is_per_account_not_global() -> None:
+    throttle = FakeThrottle()
+    service, store, _ = build(throttle=throttle, max_invalid_attempts=2)
+    user_a, user_b = uuid4(), uuid4()
+    body = "7KQ2M9XH4R"
+    bad_code = f"TO{body}{ALPHABET[compute_check_value(CityCode.TOKYO, body)]}"
+
+    for _ in range(2):
+        with pytest.raises(RedemptionError):
+            await service.redeem(user_a, bad_code)
+
+    # user_b is not throttled even though user_a is
+    with pytest.raises(RedemptionError) as raised:
+        await service.redeem(user_b, bad_code)
+
+    assert raised.value.code is RedemptionErrorCode.INVALID  # not ATTEMPTS_LIMITED
+
+
+async def test_no_throttle_configured_does_not_block() -> None:
+    # When throttle=None, the service keeps working normally (NullThrottle default).
+    service, store, _ = build(throttle=None)
+    user = uuid4()
+    result = await service.redeem(user, add_code(store))
+    assert result.replayed is False

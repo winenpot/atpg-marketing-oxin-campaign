@@ -18,12 +18,13 @@ even if this code had a bug).
 import hashlib
 import hmac
 from dataclasses import dataclass
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from enum import StrEnum
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from app.application.authentication import Clock
+from app.application.failure_throttle import FailureThrottle, ThrottleSettings
 from app.application.unit_of_work import ClaimedCode, UnitOfWork, UnitOfWorkFactory
 from app.domain.codes import CodeFormatError, CodeProblem, parse_code
 from app.domain.ledger import LedgerReason, NewLedgerEntry
@@ -39,12 +40,16 @@ class RedemptionErrorCode(StrEnum):
     INVALID = "CODE_INVALID"
     ALREADY_REDEEMED = "CODE_ALREADY_REDEEMED"
     DAILY_LIMIT = "REDEMPTION_DAILY_LIMIT"
+    ATTEMPTS_LIMITED = "CODE_ATTEMPTS_LIMITED"
 
 
 class RedemptionError(Exception):
-    def __init__(self, code: RedemptionErrorCode) -> None:
+    def __init__(
+        self, code: RedemptionErrorCode, retry_after: int | None = None
+    ) -> None:
         super().__init__(code.value)
         self.code = code
+        self.retry_after = retry_after
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,12 +91,16 @@ class RedemptionService:
         pepper: str | None,
         daily_limit: int,
         campaign_zone: ZoneInfo,
+        throttle: FailureThrottle | None = None,
+        throttle_settings: ThrottleSettings | None = None,
     ) -> None:
         self._unit_of_work = unit_of_work
         self._clock = clock
         self._pepper = pepper
         self._daily_limit = daily_limit
         self._campaign_zone = campaign_zone
+        self._throttle = throttle
+        self._throttle_settings = throttle_settings or ThrottleSettings()
 
     async def redeem(self, user_id: UUID, raw_code: str) -> RedemptionResult:
         if self._pepper is None:
@@ -106,16 +115,36 @@ class RedemptionService:
             )
             raise RedemptionError(code) from error
 
-        code_hash = hash_redemption_code(parsed.canonical, self._pepper)
         now = self._clock.now()
-        async with self._unit_of_work() as uow:
-            balance = await uow.ledger.lock_wallet(user_id, now)
-            claimed = await uow.codes.claim(code_hash, user_id, now)
-            if claimed is None:
-                return await self._resolve_unclaimed(uow, code_hash, user_id, balance)
-            result = await self._apply_claim(uow, claimed, user_id, balance, now)
-            await uow.commit()
-            return result
+
+        # Per-account invalid-code throttle: reject before touching the store.
+        if self._throttle is not None:
+            window_start = now - timedelta(
+                seconds=self._throttle_settings.window_seconds
+            )
+            failures = await self._throttle.count_in_window(user_id, window_start)
+            if failures >= self._throttle_settings.max_attempts:
+                raise RedemptionError(
+                    RedemptionErrorCode.ATTEMPTS_LIMITED,
+                    retry_after=self._throttle_settings.window_seconds,
+                )
+
+        code_hash = hash_redemption_code(parsed.canonical, self._pepper)
+        try:
+            async with self._unit_of_work() as uow:
+                balance = await uow.ledger.lock_wallet(user_id, now)
+                claimed = await uow.codes.claim(code_hash, user_id, now)
+                if claimed is None:
+                    return await self._resolve_unclaimed(
+                        uow, code_hash, user_id, balance
+                    )
+                result = await self._apply_claim(uow, claimed, user_id, balance, now)
+                await uow.commit()
+                return result
+        except RedemptionError as error:
+            if error.code is RedemptionErrorCode.INVALID and self._throttle is not None:
+                await self._throttle.record(user_id, now)
+            raise
 
     async def _apply_claim(
         self,

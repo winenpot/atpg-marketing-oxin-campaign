@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     api_key: SecretStr | None = None
     redemption_code_pepper: SecretStr | None = None
     redemption_daily_limit_per_user: int = Field(default=20, ge=1, le=1_000)
+    redemption_max_invalid_attempts_per_hour: int = Field(default=10, ge=1, le=1_000)
     campaign_timezone: str = "Asia/Tehran"
     email_provider: str = "development"
     auth_challenge_ttl_seconds: int = Field(default=600, ge=60, le=3_600)
