@@ -7,6 +7,12 @@ from app.app import create_app
 from app.core.config import Settings
 
 
+@pytest.fixture(autouse=True)
+def _ignore_local_env_file(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Tests must not depend on the developer's .env (e.g. a real CORS_ORIGINS).
+    monkeypatch.setitem(Settings.model_config, "env_file", None)
+
+
 @pytest.fixture
 def client() -> TestClient:
     settings = Settings(
