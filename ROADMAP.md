@@ -125,7 +125,11 @@ Two buffers are built in: the half days (D2, D9) and D13. If you are behind on D
 
 - Phone number + SMS code sign-in, with autofill (WebOTP on Android, `one-time-code` on iPhone).
 - Printed codes v2, batches with activate/void, QR landing page, manual code entry. *(backend ✅)*
-- City passport (entries per city) and coin wallet with history. *(backend ✅)*
+- Coin wallet with history. *(backend ✅)* The city passport is **parked** for the MVP
+  ([ADR 0009](docs/adr/0009-park-city-passport.md), [docs/parked/CITY_PASSPORT.md](docs/parked/CITY_PASSPORT.md));
+  the backend keeps recording entries.
+- Every screen of the 2026-10-10 frontend demo has an endpoint in
+  [API_CONTRACT.md](docs/API_CONTRACT.md#screen-map); the build order is in the plan.
 - Daily and weekly challenges: automatic types (redeem N codes, collect N different cities) and manual types (social post, staff-verified task) with an approval queue.
 - Weekly leaderboard per lounge and overall, ranked by coins **earned** this week.
 - Tournaments entered by admin/staff, results paid in coins.

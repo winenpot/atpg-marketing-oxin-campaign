@@ -41,6 +41,8 @@ adapters in integration tests.
   codes belong to `code_batches` and are redeemable only while `active`.
 - Seven city passports (Paris, Berlin, Pattaya, Mexico, Madrid, Tokyo,
   Moscow); `passport_progress.points` counts entries in that city's draw.
+  Parked for the MVP (ADR 0009): keep writing it, keep it out of the player
+  contract.
 - Simple reads and admin CRUD do not need a port per table; add one when a
   second real caller appears.
 - `AuthenticationService` stays independent of FastAPI, SQLAlchemy and SMS
