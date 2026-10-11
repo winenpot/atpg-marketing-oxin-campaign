@@ -264,5 +264,86 @@
   "ok": true,
   "canonical": "PR0110000000V",
   "format_id": "v2-b10"
+ },
+ {
+  "input": "TOHA1NQCC32",
+  "note": "valid TOKYO code (city2-b9)",
+  "ok": true,
+  "canonical": "TOHA1NQCC32",
+  "format_id": "city2-b9"
+ },
+ {
+  "input": "TO-HA1-NQC-C32",
+  "note": "printed grouping (city2-b9)",
+  "ok": true,
+  "canonical": "TOHA1NQCC32",
+  "format_id": "city2-b9"
+ },
+ {
+  "input": "to-ha1-nqc-c32",
+  "note": "lowercase (city2-b9)",
+  "ok": true,
+  "canonical": "TOHA1NQCC32",
+  "format_id": "city2-b9"
+ },
+ {
+  "input": "TOHA0NQCC32",
+  "note": "one character changed (city2-b9)",
+  "ok": false,
+  "problem": "mistyped"
+ },
+ {
+  "input": "MOZNV7MNDS0",
+  "note": "valid MOSCOW code (city2-b9)",
+  "ok": true,
+  "canonical": "MOZNV7MNDS0",
+  "format_id": "city2-b9"
+ },
+ {
+  "input": "MOZNV7MND00",
+  "note": "one character changed (city2-b9)",
+  "ok": false,
+  "problem": "mistyped"
+ },
+ {
+  "input": "https://torshx.com/r#TO-HA1-NQC-C32",
+  "note": "printed QR URL, code after the fragment",
+  "ok": true,
+  "canonical": "TOHA1NQCC32",
+  "format_id": "city2-b9"
+ },
+ {
+  "input": "HTTPS://TORSHX.COM/R#to-ha1-nqc-c32",
+  "note": "printed QR URL, uppercase scheme/host, lowercase fragment",
+  "ok": true,
+  "canonical": "TOHA1NQCC32",
+  "format_id": "city2-b9"
+ },
+ {
+  "input": "https://play.example.ir/r/TOHA1NQCC32",
+  "note": "legacy path-form QR URL (no fragment), code after the last slash",
+  "ok": true,
+  "canonical": "TOHA1NQCC32",
+  "format_id": "city2-b9"
+ },
+ {
+  "input": "TOHA۱NQCC۳۲",
+  "note": "Persian digits (city2-b9)",
+  "ok": true,
+  "canonical": "TOHA1NQCC32",
+  "format_id": "city2-b9"
+ },
+ {
+  "input": "PROIL00000V",
+  "note": "O, I and L typed for 0, 1 and 1 (city2-b9)",
+  "ok": true,
+  "canonical": "PR01100000V",
+  "format_id": "city2-b9"
+ },
+ {
+  "input": "TOHA1NQCC",
+  "note": "too short (city2-b9 length, missing check character)",
+  "ok": false,
+  "problem": "malformed"
  }
 ]

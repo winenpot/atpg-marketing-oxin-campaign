@@ -10,9 +10,16 @@ export const FORMATS = {
     grouping: [4, 4, 3],
     aliases: { O: "0", I: "1", L: "1" },
   },
+  "city2-b9": {
+    formatId: "city2-b9",
+    alphabet: "0123456789ABCDEFGHJKMNPQRSTVWXYZ",
+    bodyLength: 8,
+    grouping: [3, 3, 3],
+    aliases: { O: "0", I: "1", L: "1" },
+  },
 };
 
-export const DEFAULT_FORMAT_ID = "v2-b10";
+export const DEFAULT_FORMAT_ID = "city2-b9";
 
 const CITY_CHECK_INDEX = { PR: 1, BE: 2, PA: 3, ME: 4, MA: 5, TO: 6, MO: 7 };
 const EASTERN_DIGITS = /[۰-۹٠-٩]/g;
@@ -43,6 +50,18 @@ export function normalizeCode(raw) {
     .toUpperCase();
 }
 
+// Drop a scanned QR's URL, keeping only the code it carries. The QR payload
+// puts the code after a "#" (a URL fragment, kept out of server logs and
+// Referer), e.g. "https://torshx.com/r#TO-ABC-DEF-GHJ"; the older path form
+// ("https://.../r/CODE", no fragment) is handled by the text after the last
+// "/". A bare typed code (no "#" or "://") passes through unchanged.
+function stripQrWrapper(raw) {
+  const text = raw.trim();
+  if (text.includes("#")) return text.slice(text.lastIndexOf("#") + 1);
+  if (text.includes("://")) return text.slice(text.lastIndexOf("/") + 1);
+  return text;
+}
+
 function luhnModNSum(values, startFactor, base) {
   let factor = startFactor;
   let total = 0;
@@ -66,7 +85,7 @@ function checkIsValid(prefix, body, check, format) {
 // Returns {ok: true, city, canonical, formatId} or
 // {ok: false, problem: "malformed" | "mistyped"}.
 export function parseCode(raw) {
-  const text = normalizeCode(raw);
+  const text = normalizeCode(stripQrWrapper(raw));
   if (!/^[\x00-\x7F]*$/.test(text)) return { ok: false, problem: "malformed" };
 
   const format = formatsByLength().get(text.length);

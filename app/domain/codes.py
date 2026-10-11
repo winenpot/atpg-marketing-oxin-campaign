@@ -164,8 +164,16 @@ class CodeFormat:
 
 V2_B10 = CodeFormat(format_id="v2-b10", body_length=10, grouping=(4, 4, 3))
 
+# Current default (decision 2026-10-10): 2-letter city + 9 characters printed
+# as 3-3-3 (8 random characters + 1 check character), carried in the QR as
+# the URL fragment so it never reaches server logs or Referer headers, e.g.
+# ``https://torshx.com/r#TO-ABC-DEF-GHJ``. v2-b10 stays registered: nothing
+# has been printed in either format yet, but the registry never un-registers
+# a format once real codes could exist under it.
+CITY2_B9 = CodeFormat(format_id="city2-b9", body_length=8, grouping=(3, 3, 3))
+
 FORMATS: dict[str, CodeFormat] = {}
-DEFAULT_FORMAT_ID = V2_B10.format_id
+DEFAULT_FORMAT_ID = CITY2_B9.format_id
 
 
 def register_format(code_format: CodeFormat) -> CodeFormat:
@@ -200,6 +208,7 @@ def get_format(format_id: str = "") -> CodeFormat:
 
 
 register_format(V2_B10)
+register_format(CITY2_B9)
 
 # Names kept for callers written before formats were pluggable (default format).
 ALPHABET = V2_B10.alphabet
@@ -318,6 +327,24 @@ def normalize_input(raw: str) -> str:
     return _strip_separators(text).upper()
 
 
+def _strip_qr_wrapper(raw: str) -> str:
+    """Drop a scanned QR's URL, keeping only the code it carries.
+
+    The current QR payload puts the code after a ``#`` (a URL fragment, so
+    it never reaches server logs or ``Referer`` headers), e.g.
+    ``https://torshx.com/r#TO-ABC-DEF-GHJ``. Anything printed in the older
+    path form (``https://.../r/CODE``, no fragment) is handled too by
+    falling back to the text after the last ``/``. A bare typed code (no
+    ``#`` or ``://``) passes through unchanged.
+    """
+    text = raw.strip()
+    if "#" in text:
+        return text.rsplit("#", 1)[1]
+    if "://" in text:
+        return text.rsplit("/", 1)[1]
+    return text
+
+
 def parse_code(raw: str) -> ParsedCode:
     """Parse user input into a :class:`ParsedCode` or raise ``CodeFormatError``.
 
@@ -327,7 +354,7 @@ def parse_code(raw: str) -> ParsedCode:
     shape is right but the check character does not match, which almost
     always means one character was misread from the packaging.
     """
-    text = normalize_input(raw)
+    text = normalize_input(_strip_qr_wrapper(raw))
     fmt = next((f for f in FORMATS.values() if f.canonical_length == len(text)), None)
     if fmt is None or not text.isascii():
         raise CodeFormatError(CodeProblem.MALFORMED)

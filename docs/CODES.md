@@ -21,16 +21,23 @@ Section 1 is written to be handed to the factory as-is.
 
 | Item | Value |
 |---|---|
-| Characters per code | 13: two city letters, then 11 characters from `0123456789ABCDEFGHJKMNPQRSTVWXYZ` (no I, L, O, U) |
-| Printed form | Grouped with dashes: `TO-7KQ2-M9XH-4R6` (16 characters with dashes) |
+| Characters per code | 11: two city letters, then 9 characters from `0123456789ABCDEFGHJKMNPQRSTVWXYZ` (no I, L, O, U) |
+| Printed form | Grouped with dashes: `TO-HA1-NQC-C32` (14 characters with dashes) |
 | City prefixes | Paris `PR`, Berlin `BE`, Pattaya `PA`, Mexico `ME`, Madrid `MA`, Tokyo `TO`, Moscow `MO` |
 | Uniqueness | Every unit has a different code; we supply them in a CSV, one row per unit |
 | **Placement** | **Not visible until the drink is opened**: inside the cap / under the tab / under a peel layer. A code readable on a closed can can be harvested from shelves and vending-machine windows |
 | Font | A clear sans-serif or monospace face, at least 2 mm character height; the dashes help reading |
-| QR (if the printer can do variable QR) | Encodes the URL in the CSV column `qr_url`, e.g. `https://play.<domain>/r/TO7KQ2M9XH4R6`. Error correction level M or Q. At about 0.5 mm per module the QR is roughly 2 cm square including its quiet zone; test before the run |
-| If no per-unit QR is possible | Print the 13-character code per unit, plus one **static** QR on the label that opens `https://play.<domain>/`; the player types the code |
+| QR (if the printer can do variable QR) | Encodes the URL in the CSV column `qr_url`, e.g. `HTTPS://TORSHX.COM/R#TO-HA1-NQC-C32`. The code sits after `#` (a URL fragment), so it never reaches server logs or `Referer` headers. Error correction level M. At about 0.5 mm per module the QR is roughly 2 cm square including its quiet zone; test before the run |
+| If no per-unit QR is possible | Print the 11-character code per unit, plus one **static** QR on the label that opens `https://torshx.com/`; the player types the code |
 | File we send | `batch_id, city, printed_code, code, qr_url` (UTF-8 CSV), plus a `.sha256` checksum file |
 | Test print | 20 units with **test codes** before the real run; we scan and type them |
+
+Current default format id: `city2-b9` (registered 2026-10-11, decision in
+`docs/vault/Decisions.md`). The original `v2-b10` format (13 characters,
+`https://.../r/CODE` path form) stays registered — nothing has been printed
+in either format yet, but formats are never un-registered once real codes
+could exist under them. `scripts.generate_codes --format <id>` picks a
+non-default format when needed.
 
 ## 2. Why this format
 
@@ -58,11 +65,13 @@ without the pepper ([ADR-0002](adr/0002-random-codes-hmac-storage-batches.md)).
 People mistype, use Persian keyboards and paste from chats. Before checking anything, the
 server (`app/domain/codes.py`) normalizes the input:
 
-1. Unicode NFKC (full-width characters become normal ones).
-2. Persian `۰–۹` and Arabic-Indic `٠–٩` digits become `0–9`.
-3. Spaces, every kind of dash, underscores, dots and invisible characters (ZWNJ, direction marks) are removed.
-4. Upper case.
-5. In the prefix, `0` is read as `O` (`T0` → `TO`). After the prefix, `O` → `0` and `I`, `L` → `1`.
+1. If the input is a scanned QR URL, keep only the code: the text after the last `#`
+   (current fragment form), or after the last `/` if there is no `#` (older path form).
+2. Unicode NFKC (full-width characters become normal ones).
+3. Persian `۰–۹` and Arabic-Indic `٠–٩` digits become `0–9`.
+4. Spaces, every kind of dash, underscores, dots and invisible characters (ZWNJ, direction marks) are removed.
+5. Upper case.
+6. In the prefix, `0` is read as `O` (`T0` → `TO`). After the prefix, `O` → `0` and `I`, `L` → `1`.
 
 Then: wrong length, unknown prefix or a character outside the alphabet → `CODE_MALFORMED`;
 check character wrong → `CODE_MISTYPED`; otherwise the hash is looked up.
@@ -152,8 +161,9 @@ leaked: void it, and follow the [code leak runbook](OPERATIONS.md#runbook-suspec
 
 The server keeps a **format registry** (`app/domain/codes.py`). Every format is a
 `CodeFormat` dataclass with its own `format_id`, alphabet, body length, grouping and
-check scheme. Only one format is registered today (`v2-b10`), but the system is built
-so adding a second one is a mechanical step — no surgery on the parser.
+check scheme. Two formats are registered today (`city2-b9`, the default, and the
+earlier `v2-b10`), and the system is built so adding another one is a mechanical
+step — no surgery on the parser.
 
 **When you need a new format** (the factory can only print digits, a future shorter
 code for a small promo, etc.), do this in one PR:

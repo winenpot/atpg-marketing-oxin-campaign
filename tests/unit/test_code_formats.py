@@ -5,6 +5,7 @@ from collections.abc import Iterator
 import pytest
 
 from app.domain.codes import (
+    CITY2_B9,
     V2_B10,
     CodeFormat,
     CodeFormatError,
@@ -31,8 +32,9 @@ def narrow_format() -> Iterator[CodeFormat]:
     unregister_format(fmt.format_id)
 
 
-def test_default_format_is_v2_b10() -> None:
-    assert get_format() is V2_B10
+def test_default_format_is_city2_b9() -> None:
+    assert get_format() is CITY2_B9
+    assert get_format("city2-b9") is CITY2_B9
     assert get_format("v2-b10") is V2_B10
 
 
@@ -65,7 +67,7 @@ def test_registering_a_format_with_a_colliding_length_fails(
 
 def test_default_format_cannot_be_unregistered() -> None:
     with pytest.raises(FormatRegistryError):
-        unregister_format("v2-b10")
+        unregister_format("city2-b9")
 
 
 @pytest.mark.parametrize(

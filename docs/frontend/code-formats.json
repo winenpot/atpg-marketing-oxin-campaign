@@ -1,5 +1,5 @@
 {
- "default_format_id": "v2-b10",
+ "default_format_id": "city2-b9",
  "formats": {
   "v2-b10": {
    "format_id": "v2-b10",
@@ -12,6 +12,18 @@
    "city_check_index": { "PR": 1, "BE": 2, "PA": 3, "ME": 4, "MA": 5, "TO": 6, "MO": 7 },
    "fingerprint": "3d8f6191ecc193a6b8dc6a136b3c265252245bfcf346a3d2ae544175e5a66a59",
    "entropy_bits": 50.0
+  },
+  "city2-b9": {
+   "format_id": "city2-b9",
+   "alphabet": "0123456789ABCDEFGHJKMNPQRSTVWXYZ",
+   "body_length": 8,
+   "grouping": [3, 3, 3],
+   "aliases": { "I": "1", "L": "1", "O": "0" },
+   "check_scheme": "luhn-mod-n",
+   "prefix_length": 2,
+   "city_check_index": { "PR": 1, "BE": 2, "PA": 3, "ME": 4, "MA": 5, "TO": 6, "MO": 7 },
+   "fingerprint": "318d64bc53fa0e6cd27d1834d39d6c742d8c4a4a7a6ba2e446e9ba16c6be6e34",
+   "entropy_bits": 40.0
   }
  }
 }

@@ -35,7 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.application.redemption_codes import hash_redemption_code
 from app.core.config import get_settings
 from app.domain.code_batches import BatchEventType, BatchStatus
-from app.domain.codes import format_printed, generate_code, get_format
+from app.domain.codes import CodeFormat, format_printed, generate_code, get_format
 from app.domain.passports import Campaign, CityCode
 from app.infrastructure.postgres.database import PostgreSQLAdapter
 from app.infrastructure.postgres.models import (
@@ -69,8 +69,14 @@ def build_unique_codes(
     return sorted(codes)
 
 
-def qr_url(base_url: str, code: str) -> str:
-    return f"{base_url.rstrip('/')}/r/{code}"
+def qr_url(base_url: str, code: str, code_format: CodeFormat) -> str:
+    """The URL printed as the QR, code in the fragment (never logged server-side).
+
+    Uppercase (the printed form already is): QR alphanumeric mode encodes
+    upper-case text and digits in a smaller symbol than mixed case.
+    """
+    printed = format_printed(code, code_format)
+    return f"{base_url.rstrip('/')}/r#{printed}".upper()
 
 
 async def insert_codes(
@@ -183,7 +189,7 @@ async def generate_batch(
                     city.name,
                     format_printed(code, code_format),
                     code,
-                    qr_url(base_url, code),
+                    qr_url(base_url, code, code_format),
                 ]
                 for code in inserted
             )

@@ -45,7 +45,9 @@ async def database(test_database_url: str) -> AsyncIterator[PostgreSQLAdapter]:
         await adapter.dispose()
 
 
-async def make_batch(database: PostgreSQLAdapter, tmp_path: Path, name: str) -> UUID:
+async def make_batch(
+    database: PostgreSQLAdapter, tmp_path: Path, name: str, format_id: str = "v2-b10"
+) -> UUID:
     output = tmp_path / f"{name}.csv"
     return await generate_batch(
         database.session_factory,
@@ -56,6 +58,7 @@ async def make_batch(database: PostgreSQLAdapter, tmp_path: Path, name: str) -> 
         base_url="https://play.example.ir",
         output=output,
         pepper=PEPPER,
+        format_id=format_id,
     )
 
 

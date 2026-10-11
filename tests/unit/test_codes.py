@@ -4,6 +4,7 @@ from app.domain.codes import (
     ALPHABET,
     BODY_LENGTH,
     CANONICAL_LENGTH,
+    V2_B10,
     CodeFormatError,
     CodeProblem,
     check_is_valid,
@@ -15,6 +16,10 @@ from app.domain.codes import (
 )
 from app.domain.passports import CityCode
 
+# This file exercises the v2-b10 format by name: pass it explicitly to every
+# call that would otherwise use the registry's current default, so these
+# tests keep covering v2-b10 even after the default format changes.
+
 # A fixed, valid Tokyo code used across tests (body chosen by hand).
 TOKYO_BODY = "7KQ2M9XH4R"
 TOKYO_CODE = (
@@ -24,7 +29,7 @@ TOKYO_CODE = (
 
 def test_generated_codes_have_the_v2_shape_and_parse_back() -> None:
     for city in CityCode:
-        code = generate_code(city)
+        code = generate_code(city, V2_B10)
 
         assert len(code) == CANONICAL_LENGTH
         assert code.startswith(city.value)
@@ -34,13 +39,13 @@ def test_generated_codes_have_the_v2_shape_and_parse_back() -> None:
 
 
 def test_generated_codes_do_not_repeat_in_a_large_sample() -> None:
-    sample = {generate_code(CityCode.PARIS) for _ in range(20_000)}
+    sample = {generate_code(CityCode.PARIS, V2_B10) for _ in range(20_000)}
 
     assert len(sample) == 20_000
 
 
 def test_printed_form_groups_characters_and_parses_back() -> None:
-    printed = format_printed(TOKYO_CODE)
+    printed = format_printed(TOKYO_CODE, V2_B10)
 
     assert printed == f"TO-{TOKYO_CODE[2:6]}-{TOKYO_CODE[6:10]}-{TOKYO_CODE[10:]}"
     assert parse_code(printed).canonical == TOKYO_CODE
@@ -50,10 +55,12 @@ def test_printed_form_groups_characters_and_parses_back() -> None:
     "typed",
     [
         TOKYO_CODE.lower(),
-        f"  {format_printed(TOKYO_CODE)}  ",
+        f"  {format_printed(TOKYO_CODE, V2_B10)}  ",
         TOKYO_CODE.replace("TO", "T0", 1),  # zero typed for the O in the prefix
         " ".join(TOKYO_CODE),
-        format_printed(TOKYO_CODE).replace("-", "–"),  # en dash from autocorrect
+        format_printed(TOKYO_CODE, V2_B10).replace(
+            "-", "–"
+        ),  # en dash from autocorrect
         f"‌{TOKYO_CODE}‏",  # ZWNJ and RLM pasted from a Persian chat
     ],
 )

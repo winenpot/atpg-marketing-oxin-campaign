@@ -4,7 +4,7 @@ import itertools
 
 import pytest
 
-from app.domain.codes import parse_code
+from app.domain.codes import V2_B10, format_printed, parse_code
 from app.domain.passports import CityCode
 from scripts.generate_codes import build_unique_codes, city_from_name, qr_url
 
@@ -39,8 +39,8 @@ def test_city_from_name_rejects_unknown_cities() -> None:
         city_from_name("london")
 
 
-def test_qr_url_carries_the_compact_code_in_the_path() -> None:
-    assert (
-        qr_url("https://play.example.ir/", "TO7KQ2M9XH4R6")
-        == "https://play.example.ir/r/TO7KQ2M9XH4R6"
+def test_qr_url_carries_the_printed_code_in_the_fragment() -> None:
+    code = "TO7KQ2M9XH4R6"
+    assert qr_url("https://play.example.ir/", code, V2_B10) == (
+        f"https://play.example.ir/r#{format_printed(code, V2_B10)}".upper()
     )

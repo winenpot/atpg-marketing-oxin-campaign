@@ -103,7 +103,8 @@ Hexagonal ("ports and adapters"), already established in this repository. Depend
 ```text
 app/
   domain/              pure rules, no frameworks
-    codes.py           code format registry, v2-b10 default, normalization, check (done)
+    codes.py           code format registry, city2-b9 default (v2-b10 also
+                       registered), normalization, check (done)
     code_batches.py    batch lifecycle                                                 (done)
     ledger.py          coin ledger entry types                               (done)
     passports.py       cities, campaigns, entries per code
@@ -170,7 +171,7 @@ erDiagram
         string city
         int coins_per_code
         string status "generated, active, void"
-        string format_id "registered format; default v2-b10"
+        string format_id "registered format; default city2-b9"
         string format_fingerprint "set at freeze; guards against spec drift"
         timestamptz exported_at
         string export_sha256
