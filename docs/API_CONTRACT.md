@@ -75,7 +75,12 @@ Rules that hold whatever the final names are:
    `onrender.com`). Safari and Firefox block third-party cookies, so sign-in would work in
    desktop Chrome and fail on iPhone. To test against Render, use rule 1 (proxy) or the
    Vite dev proxy (`server.proxy`).
-4. The SMS one-time-code line is `@<frontend host> #123456`. It must match the host in the
+4. Plain `http://<ip>:<port>` frontends (the current demo) are cross-site **and** insecure.
+   Browsers allow the camera (QR scanning), WebOTP and `Secure` cookies only on HTTPS
+   pages, and Safari blocks the cross-site cookie anyway. They are fine for looking at
+   screens, but not for testing sign-in and scanning. For that, serve the build over HTTPS
+   on a real hostname with `/api` proxied (rule 1).
+5. The SMS one-time-code line is `@<frontend host> #123456`. It must match the host in the
    address bar, so it changes whenever the frontend host changes.
 
 ## Errors
@@ -151,7 +156,7 @@ Switch on `code` and show your own Persian copy. `message` is for developers and
 | Profile → حساب‌های متصل | `/me/social-accounts...` |
 | Profile → دعوت دوستان | `GET /me/invite` |
 | Profile → تنظیمات, پشتیبانی | Static in the frontend; support contacts come from `GET /config.support` |
-| `/b/:code` product QR | `POST /redemptions` (after sign-in) |
+| `/r#<code>` product QR | `POST /redemptions` (after sign-in) |
 | `/q/:venue` venue QR, `/go` campaign link | `POST /me/arrivals` |
 | Home "stories" strip | Static assets in the frontend for the MVP (no endpoint) |
 
@@ -275,11 +280,11 @@ idempotent per account.
 
 ```http
 POST /api/v1/redemptions
-{"code": "TX1:B:7KQ2M9XH4"}
+{"code": "TO-7KQ-2M9-XH4"}
 ```
 
-Send whatever the camera read or the user typed: the full QR URL, the `TX1:B:` payload, or
-the bare code with or without dashes. The server normalizes it.
+Send whatever the camera read or the user typed: the full QR URL or the bare code, with or
+without dashes, in any letter case. The server normalizes it.
 
 ```http
 200 OK
@@ -291,10 +296,12 @@ screen without confetti; a replay does not count toward the limit. Errors:
 `CODE_MALFORMED`, `CODE_MISTYPED`, `CODE_INVALID`, `CODE_ALREADY_REDEEMED`,
 `SCAN_DAILY_LIMIT`, `CODE_ATTEMPTS_LIMITED`.
 
-Code format: the demo assumes 9 characters and the QR payloads
-`https://<frontend host>/b/<code>` or `TX1:B:<code>`. The format is not frozen yet (see
-[CODES.md](CODES.md)). Validate with the generated `docs/frontend/codes.js` instead of
-hard-coding the length.
+Code format (decided 2026-10-10): a 2-letter city code plus 9 characters, written
+`<CITY>-XXX-XXX-XXX`, for example `TO-7KQ-2M9-XH4`. The QR encodes
+`https://torshx.com/r#TO-7KQ-2M9-XH4`. The code sits in the URL **fragment**, so it never
+reaches a server, a proxy log or a `Referer` header. The format is registered and frozen in
+the backend ([CODES.md](CODES.md)); validate with the generated `docs/frontend/codes.js`
+instead of hard-coding the length.
 
 ### `GET /api/v1/me/scans` (planned)
 
@@ -761,13 +768,17 @@ health check.
 
 ## Frontend recipes
 
-**Product QR landing (`/b/:code`)**
+**Product QR landing (`/r#<code>`)**
 
-1. Read `code` from the path. If signed out, keep it in `sessionStorage` and go to sign-in.
+1. On the `/r` route, read the code from `location.hash` (drop the leading `#`). If signed
+   out, keep it in `sessionStorage` and go to sign-in.
 2. After sign-in (and profile setup if needed), `POST /api/v1/redemptions` with the code.
 3. Call `history.replaceState(null, "", "/scan")` so the code does not stay in the URL bar
    or history.
 4. Remove the code from `sessionStorage` after any final answer (success or error).
+
+The host lives in build config. `torshx.com` is decided for printing, but test builds run on
+other hosts.
 
 **Venue QR (`/q/:venue`) and `/go`**: keep `{source, venue}` in `sessionStorage`, call
 `POST /me/arrivals` once after sign-in, then go to `/home`.
@@ -810,6 +821,6 @@ Differences between the 2026-10-10 demo client and this contract:
 | `PATCH /me {display_name}` | `PATCH /me {nickname, avatar_id, favorite_games, accept_terms_version}` |
 | `POST /me/redeem {code}` | `POST /redemptions {code}` |
 | `GET /me/passports` | Removed from the MVP (parked) |
-| QR host hard-coded as `torsh-x.com` | Read the host from build config; hostnames are not final |
+| QR `https://torsh-x.com/b/<9 chars>` or `TX1:B:<9 chars>` | `https://torshx.com/r#<CITY>-XXX-XXX-XXX`; the code is in the fragment; host from build config |
 | Avatar, favourites, streak, spin, games, shop, tickets, events, social and invite state live in the browser | All of it moves to the endpoints above; the browser keeps only UI state |
 | No T&C acceptance | Add it to setup |
