@@ -137,6 +137,29 @@ python -m scripts.code_batches void <batch-id>        # leak, misprint, recall
 `coins_per_code` is set per batch (0 = entries only). Keep `generated` until the product is
 actually on sale: codes found early (factory staff, warehouse) are worthless until then.
 
+## Printing QR sheets for a test run
+
+`scripts/qr_sheets.py` turns a batch CSV into a cut-ready PDF: one QR per code (encoding
+the exact `qr_url` column), the printed code underneath as a manual-entry fallback, crop
+marks at every cell, and the batch id plus `sheet n/N` in the page header. It is for test
+prints and planning (a factory print run still works from the CSV directly, per section 1);
+treat the PDF like the CSV — it is a plaintext copy of the codes.
+
+```bash
+uv run python -m scripts.qr_sheets --csv var/redemption-codes/tokyo-run1.csv \
+    --paper A4 --per-page 50 --qr-mm 20 --output var/redemption-codes/tokyo-run1.pdf
+```
+
+The layout picks a columns x rows grid for `--per-page` codes on `--paper` (A4 or A3) and
+refuses to run if a cell cannot hold `--qr-mm` plus the printed-code line and a cutting
+margin — it never silently shrinks the QR below what you asked for. Defaults match the
+factory spec: `A4 --per-page 50` lays out 5x10 at ~38x28mm cells; `A3 --per-page 120` lays
+out 10x12 at ~28x34mm cells, both comfortably holding a 20mm QR.
+
+Print at 100% scale ("actual size", never "fit to page"), then verify before trusting a
+real run: measure a QR with a ruler, and scan it with an Android phone and an iPhone to
+confirm it lands on the right URL (see "Test print" in section 1 and section 6).
+
 ## Handing codes to the printer
 
 The CSV is the **only plaintext copy** of the codes. Treat it like cash.
