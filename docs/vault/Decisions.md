@@ -45,3 +45,26 @@ when B10 (phone OTP) is implemented.
 conventional-commit subjects). `HANDOFF.md` (written by a prior session,
 superseded by this vault + the plan file) is gitignored and will be
 deleted once this vault is confirmed to carry everything load-bearing from it.
+
+## 2026-10-10 — frontend demo, QR format, hosting, sizing
+
+- Frontend demo reviewed (Arman, http://86.104.82.71:8000/, all mocked in the
+  browser). `../API_CONTRACT.md` now covers every demo screen; city passport
+  parked (`../adr/0009-park-city-passport.md`).
+- **QR format supersedes the 2026-10-07 entry:** `https://torshx.com/r#<CITY>-XXX-XXX-XXX`
+  (2-letter city code + 9 characters, code in the URL fragment). The fragment
+  never reaches the server or logs, so the `/r/*` log redaction is no longer
+  needed. New code format still to be registered (plan task F1).
+- Domain: torshx.com. Daily scan cap: 5. Spin wheel and PS5 draw stay in scope.
+- Hosting: first week on Render (API) + Supabase (DB) as test; domestic servers
+  later. We host Arman's build ourselves behind Caddy on HTTPS (plan task F3):
+  a plain http://IP:port page can't use the camera, WebOTP or cross-site cookies.
+  Canonical frontend repo should live in the company group.
+- Stay on FastAPI + SQLAdmin (no Django switch); challenges, prizes, events and
+  tournaments become admin-editable rows (typed columns + JSONB params).
+- API_KEY to be dropped (unused; a browser app can't keep a secret).
+- Sizing (estimate only, servers not yet measured): max 40k users, 10k active at
+  a spike -> plan for 1,000 req/s; 2 servers (app 4 vCPU/8 GB, DB 4 vCPU/16 GB
+  NVMe) + continuous off-site WAL backups. Method to confirm it:
+  `../ops/CAPACITY_PLANNING.md`. Final call goes in ADR 0010 after measurements.
+- Still open: reward economy and delivery (user + Mehdi, after DB design).
