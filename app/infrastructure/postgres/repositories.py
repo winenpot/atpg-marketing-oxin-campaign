@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -181,6 +181,30 @@ class PostgreSQLChallengeRepository(AuthenticationChallengeRepository):
                 .limit(1)
             )
             return challenge_from_model(result) if result else None
+
+    async def get_most_recent_for_user(
+        self, user_id: UUID
+    ) -> AuthenticationChallenge | None:
+        async with self._factory() as session:
+            result = await session.scalar(
+                select(AuthenticationChallengeModel)
+                .where(AuthenticationChallengeModel.user_id == user_id)
+                .order_by(AuthenticationChallengeModel.created_at.desc())
+                .limit(1)
+            )
+            return challenge_from_model(result) if result else None
+
+    async def count_created_since(self, user_id: UUID, since: datetime) -> int:
+        async with self._factory() as session:
+            result = await session.scalar(
+                select(func.count())
+                .select_from(AuthenticationChallengeModel)
+                .where(
+                    AuthenticationChallengeModel.user_id == user_id,
+                    AuthenticationChallengeModel.created_at >= since,
+                )
+            )
+            return result or 0
 
     async def increment_attempts(self, challenge_id: UUID) -> int:
         async with self._factory() as session:

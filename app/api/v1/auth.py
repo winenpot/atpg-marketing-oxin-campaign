@@ -1,16 +1,22 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Response, Security, status
+from fastapi import APIRouter, Depends, Response, Security, status
 
 from app.api.deps import get_authentication_service, session_cookie
-from app.api.errors import ErrorResponse
+from app.api.errors import ApiError, ErrorResponse
 from app.api.v1.schemas import (
     AuthenticationRequest,
     AuthenticationRequested,
     AuthenticationVerification,
     UserResponse,
 )
-from app.application.authentication import AuthenticationError, AuthenticationService
+from app.application.authentication import (
+    AuthenticationError,
+    AuthenticationService,
+    DailyLimitError,
+    PhoneInvalidError,
+    ResendCooldownError,
+)
 from app.core.config import Settings, get_settings
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
@@ -22,22 +28,53 @@ router = APIRouter(prefix="/auth", tags=["authentication"])
     status_code=status.HTTP_202_ACCEPTED,
     summary="Request a sign-in code",
     description=(
-        "Always 202, whether or not the identifier is known: the response "
-        "never reveals which identifiers exist."
+        "Accepts Persian or Latin digits, spaces, +98/0098/98 or a leading 0. "
+        "The response is the same shape for a new and a known number."
     ),
+    responses={
+        422: {"model": ErrorResponse, "description": "PHONE_INVALID"},
+        429: {
+            "model": ErrorResponse,
+            "description": "OTP_COOLDOWN or OTP_DAILY_LIMIT",
+        },
+        503: {"model": ErrorResponse, "description": "SMS delivery is unavailable"},
+    },
 )
 async def request_authentication(
     payload: AuthenticationRequest,
     service: Annotated[AuthenticationService, Depends(get_authentication_service)],
 ) -> AuthenticationRequested:
     try:
-        await service.request_challenge(payload.identifier)
-    except AuthenticationError:
-        pass
+        result = await service.request_challenge(payload.identifier)
+    except PhoneInvalidError as error:
+        raise ApiError(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "PHONE_INVALID",
+            "not an Iranian mobile number",
+        ) from error
+    except ResendCooldownError as error:
+        raise ApiError(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "OTP_COOLDOWN",
+            "a code was already sent recently",
+            retry_after_seconds=error.retry_after_seconds,
+        ) from error
+    except DailyLimitError as error:
+        raise ApiError(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "OTP_DAILY_LIMIT",
+            "too many codes requested for this number today",
+        ) from error
+    except AuthenticationError as error:
+        raise ApiError(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "SERVICE_UNAVAILABLE",
+            "could not send the verification code",
+        ) from error
     return AuthenticationRequested(
-        message=(
-            "If the identifier can be used, verification instructions have been sent."
-        )
+        resend_after_seconds=result.resend_after_seconds,
+        expires_in_seconds=result.expires_in_seconds,
+        code_length=result.code_length,
     )
 
 
@@ -46,10 +83,10 @@ async def request_authentication(
     response_model=UserResponse,
     summary="Verify a sign-in code",
     description=(
-        "On success, sets the session cookie (see docs/API_CONTRACT.md#"
-        "hosts-cors-and-cookies) and returns the signed-in user."
+        "The first successful verify creates the account. Sets the session "
+        "cookie on success (see docs/API_CONTRACT.md#hosts-cors-and-cookies)."
     ),
-    responses={401: {"model": ErrorResponse, "description": "Invalid challenge"}},
+    responses={401: {"model": ErrorResponse, "description": "OTP_INVALID"}},
 )
 async def verify_authentication(
     payload: AuthenticationVerification,
@@ -60,9 +97,10 @@ async def verify_authentication(
     try:
         result = await service.verify_challenge(payload.identifier, payload.code)
     except AuthenticationError as error:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="invalid authentication challenge",
+        raise ApiError(
+            status.HTTP_401_UNAUTHORIZED,
+            "OTP_INVALID",
+            "wrong, expired or already-used code, or too many attempts",
         ) from error
     response.set_cookie(
         key=settings.session_cookie_name,

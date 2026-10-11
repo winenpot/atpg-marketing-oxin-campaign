@@ -170,14 +170,25 @@ docker compose -f compose.prod.yml run --rm api python -m scripts.admins list
 docker compose -f compose.prod.yml run --rm api python -m scripts.admins demote <identifier>
 ```
 
-`<identifier>` is whatever the account signed up with (today: an email; once phone OTP
-ships, an E.164 number). No admin-only routes exist yet; `app/api/deps.require_admin` is
+`<identifier>` is whatever the account signed up with (an E.164 phone number, e.g.
+`+989123456789`). No admin-only routes exist yet; `app/api/deps.require_admin` is
 ready for the first one that does.
 
 ## SMS provider
 
+Live: `app/infrastructure/sms.py` -- `KavenegarSmsSender` calls Kavenegar's
+`verify/lookup` route (stdlib `urllib`, no SDK dependency) when
+`KAVENEGAR_OTP_API_KEY` is set; otherwise `ConsoleSmsSender` just logs the code
+(default in development and the test suite, no network call).
+
 - Open accounts with **two** Iranian SMS providers under the company (they need company documents; Mehdi item M09).
 - Use the provider's **OTP / verify (template) route**, not bulk messaging: templates are pre-approved, delivered on a priority route, and not blocked by users' advertising opt-outs.
+- One env var per purpose, not one shared template: `KAVENEGAR_TEMPLATE_LOGIN` and
+  `KAVENEGAR_TEMPLATE_SIGNUP` (first-time number uses signup, a returning number
+  uses login). Vendor template approval is per-template and can lag independently --
+  a rejected template for one purpose does not block the other; point the env var at
+  an already-approved template and swap it back with no deploy once the real one is
+  approved.
 - Template text (ask the provider to approve exactly this shape; the last line is what enables autofill):
 
   ```text
@@ -187,7 +198,9 @@ ready for the first one that does.
   ```
 
   If the provider does not allow the same token twice, send the code in two parameters. After approval, **send a real one to an Android phone and an iPhone**: if the provider appends anything after the last line (an opt-out text, a signature), autofill silently stops working.
-- API keys go in `deploy/.env`. Some providers put the API key **in the request URL**: never log request URLs from the SMS adapter.
+- `KAVENEGAR_OTP_API_KEY` goes in `.env`. It sits in the request URL (Kavenegar's own
+  API shape); `KavenegarSmsSender` never logs the URL, only the masked phone and the
+  HTTP status/response body on failure.
 - Monitor credit and the failure rate (below); set a daily spend alarm with the provider if they offer one.
 
 ## Backups and restore

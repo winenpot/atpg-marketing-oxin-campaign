@@ -6,6 +6,8 @@ from app.application.authentication import AuthenticationCodeGenerator, Clock
 
 
 class SecureAuthenticationCodeGenerator(AuthenticationCodeGenerator):
+    code_length = 6
+
     def generate(self) -> tuple[str, str, str]:
         code = f"{secrets.randbelow(1_000_000):06d}"
         salt = secrets.token_urlsafe(16)

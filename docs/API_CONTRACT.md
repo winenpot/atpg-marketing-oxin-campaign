@@ -162,14 +162,16 @@ Switch on `code` and show your own Persian copy. `message` is for developers and
 
 ## Authentication
 
-### `POST /api/v1/auth/request` (live with email; phone shape planned, B10)
+### `POST /api/v1/auth/request` (live with phone)
 
 ```http
 POST /api/v1/auth/request
 {"phone": "۰۹۱۲ ۳۴۵ ۶۷۸۹"}
 ```
 
-Accepts Persian or Latin digits, spaces, `+98`, `0098`, `98` or a leading `0`.
+Accepts Persian or Latin digits, spaces, `+98`, `0098`, `98` or a leading `0`. The
+field is named `identifier` (kept for one release so an older client sending a
+`phone`-shaped value here still works).
 
 ```http
 202 Accepted
@@ -179,7 +181,7 @@ Accepts Persian or Latin digits, spaces, `+98`, `0098`, `98` or a leading `0`.
 The response is the same for new and known numbers. Errors: `PHONE_INVALID`,
 `OTP_COOLDOWN`, `OTP_DAILY_LIMIT`.
 
-### `POST /api/v1/auth/verify` (planned shape, B10)
+### `POST /api/v1/auth/verify` (live)
 
 ```http
 POST /api/v1/auth/verify

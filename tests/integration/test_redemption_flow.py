@@ -30,7 +30,6 @@ from app.domain.code_batches import BatchStatus
 from app.domain.codes import generate_code
 from app.domain.ledger import LedgerReason, NewLedgerEntry
 from app.domain.passports import CityCode
-from app.infrastructure.email import DevelopmentEmailSender
 from app.infrastructure.postgres.database import PostgreSQLAdapter
 from app.infrastructure.postgres.models import (
     CodeBatchModel,
@@ -41,6 +40,7 @@ from app.infrastructure.postgres.models import (
 )
 from app.infrastructure.postgres.repositories import PostgreSQLUserRepository
 from app.infrastructure.postgres.unit_of_work import SqlAlchemyUnitOfWork
+from app.infrastructure.sms import ConsoleSmsSender
 from scripts.code_batches import set_status
 from scripts.generate_codes import insert_codes
 
@@ -376,7 +376,6 @@ async def test_spending_more_than_the_balance_is_refused_and_rolled_back(
 async def test_redemption_api_end_to_end(test_database_url: str) -> None:
     settings = Settings(
         database_url=test_database_url,
-        email_provider="development",
         redemption_code_pepper=PEPPER,
         cors_origins="*",
         _env_file=None,
@@ -387,12 +386,12 @@ async def test_redemption_api_end_to_end(test_database_url: str) -> None:
     finally:
         await database.dispose()
     application = create_app(settings)
-    identifier = f"api-{uuid4().hex}@example.com"
+    identifier = f"+989{uuid4().int % 10**9:09d}"
 
     with TestClient(application) as client:
         client.post("/api/v1/auth/request", json={"identifier": identifier})
-        sender = application.state.email_sender
-        assert isinstance(sender, DevelopmentEmailSender)
+        sender = application.state.sms_sender
+        assert isinstance(sender, ConsoleSmsSender)
         client.post(
             "/api/v1/auth/verify",
             json={"identifier": identifier, "code": sender.last_code},

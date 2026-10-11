@@ -17,10 +17,14 @@ class Settings(BaseSettings):
     redemption_daily_limit_per_user: int = Field(default=20, ge=1, le=1_000)
     redemption_max_invalid_attempts_per_hour: int = Field(default=10, ge=1, le=1_000)
     campaign_timezone: str = "Asia/Tehran"
-    email_provider: str = "development"
-    auth_challenge_ttl_seconds: int = Field(default=600, ge=60, le=3_600)
+    kavenegar_otp_api_key: SecretStr | None = None
+    kavenegar_template_login: str = "login"
+    kavenegar_template_signup: str = "signup"
+    otp_ttl_seconds: int = Field(default=150, ge=30, le=600)
+    otp_max_attempts: int = Field(default=5, ge=1, le=20)
+    otp_resend_seconds: int = Field(default=60, ge=10, le=600)
+    otp_daily_limit_per_phone: int = Field(default=5, ge=1, le=50)
     auth_session_ttl_seconds: int = Field(default=2_592_000, ge=300, le=31_536_000)
-    auth_max_verification_attempts: int = Field(default=5, ge=1, le=20)
     session_cookie_name: str = "lottery_passport_session"
     log_level: str = "INFO"
     log_json: bool = True
@@ -51,7 +55,7 @@ class Settings(BaseSettings):
             return value.replace("postgresql://", "postgresql+asyncpg://", 1)
         return value
 
-    @field_validator("redemption_code_pepper", mode="before")
+    @field_validator("redemption_code_pepper", "kavenegar_otp_api_key", mode="before")
     @classmethod
     def treat_blank_secrets_as_unset(cls, value: object) -> object:
         # ".env.example" ships "REDEMPTION_CODE_PEPPER=" (empty). An empty

@@ -23,7 +23,6 @@ from app.infrastructure.authentication import (
     SecureAuthenticationCodeGenerator,
     SystemClock,
 )
-from app.infrastructure.email import DevelopmentEmailSender, UnavailableEmailSender
 from app.infrastructure.postgres.database import PostgreSQLAdapter
 from app.infrastructure.postgres.failure_throttle import PostgreSQLFailureThrottle
 from app.infrastructure.postgres.repositories import (
@@ -34,6 +33,7 @@ from app.infrastructure.postgres.repositories import (
     PostgreSQLWalletReader,
 )
 from app.infrastructure.postgres.unit_of_work import SqlAlchemyUnitOfWork
+from app.infrastructure.sms import ConsoleSmsSender, KavenegarSmsSender
 
 logger = logging.getLogger(__name__)
 
@@ -73,10 +73,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     configure_logging(resolved_settings)
     database = PostgreSQLAdapter(resolved_settings)
     readiness_checker = ReadinessChecker(database)
-    email_sender = (
-        DevelopmentEmailSender()
-        if resolved_settings.email_provider == "development"
-        else UnavailableEmailSender()
+    sms_sender = (
+        KavenegarSmsSender(
+            api_key=resolved_settings.kavenegar_otp_api_key.get_secret_value(),
+            template_by_purpose={
+                "login": resolved_settings.kavenegar_template_login,
+                "signup": resolved_settings.kavenegar_template_signup,
+            },
+        )
+        if resolved_settings.kavenegar_otp_api_key is not None
+        else ConsoleSmsSender()
     )
     authentication_service = AuthenticationService(
         users=PostgreSQLUserRepository(database.session_factory),
@@ -84,13 +90,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         sessions=PostgreSQLSessionRepository(database.session_factory),
         code_generator=SecureAuthenticationCodeGenerator(),
         clock=SystemClock(),
-        email_sender=email_sender,
+        sms_sender=sms_sender,
         settings=AuthenticationSettings(
-            challenge_ttl=timedelta(
-                seconds=resolved_settings.auth_challenge_ttl_seconds
-            ),
+            challenge_ttl=timedelta(seconds=resolved_settings.otp_ttl_seconds),
             session_ttl=timedelta(seconds=resolved_settings.auth_session_ttl_seconds),
-            max_verification_attempts=resolved_settings.auth_max_verification_attempts,
+            max_verification_attempts=resolved_settings.otp_max_attempts,
+            resend_cooldown=timedelta(seconds=resolved_settings.otp_resend_seconds),
+            daily_limit=resolved_settings.otp_daily_limit_per_phone,
         ),
     )
     passport_service = PassportService(
@@ -175,6 +181,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.state.passport_service = passport_service
     application.state.redemption_service = redemption_service
     application.state.wallet_service = wallet_service
-    application.state.email_sender = email_sender
+    application.state.sms_sender = sms_sender
     application.state.settings = resolved_settings
     return application

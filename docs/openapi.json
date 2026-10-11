@@ -4,7 +4,11 @@
       "AuthenticationRequest": {
         "properties": {
           "identifier": {
-            "maxLength": 320,
+            "description": "An Iranian mobile number: Persian or Latin digits, spaces, +98/0098/98 or a leading 0. 'identifier' kept as the field name for one release so an older client sending 'phone'-shaped values here keeps working.",
+            "examples": [
+              "0912 345 6789"
+            ],
+            "maxLength": 32,
             "minLength": 3,
             "title": "Identifier",
             "type": "string"
@@ -18,13 +22,25 @@
       },
       "AuthenticationRequested": {
         "properties": {
-          "message": {
-            "title": "Message",
-            "type": "string"
+          "code_length": {
+            "title": "Code Length",
+            "type": "integer"
+          },
+          "expires_in_seconds": {
+            "description": "How long the code stays valid.",
+            "title": "Expires In Seconds",
+            "type": "integer"
+          },
+          "resend_after_seconds": {
+            "description": "Seconds to wait before POSTing /auth/request again.",
+            "title": "Resend After Seconds",
+            "type": "integer"
           }
         },
         "required": [
-          "message"
+          "resend_after_seconds",
+          "expires_in_seconds",
+          "code_length"
         ],
         "title": "AuthenticationRequested",
         "type": "object"
@@ -39,7 +55,10 @@
             "type": "string"
           },
           "identifier": {
-            "maxLength": 320,
+            "examples": [
+              "0912 345 6789"
+            ],
+            "maxLength": 32,
             "minLength": 3,
             "title": "Identifier",
             "type": "string"
@@ -405,7 +424,7 @@
     },
     "/api/v1/auth/request": {
       "post": {
-        "description": "Always 202, whether or not the identifier is known: the response never reveals which identifiers exist.",
+        "description": "Accepts Persian or Latin digits, spaces, +98/0098/98 or a leading 0. The response is the same shape for a new and a known number.",
         "operationId": "request_authentication",
         "requestBody": {
           "content": {
@@ -432,11 +451,31 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "PHONE_INVALID"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "OTP_COOLDOWN or OTP_DAILY_LIMIT"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "SMS delivery is unavailable"
           }
         },
         "summary": "Request a sign-in code",
@@ -447,7 +486,7 @@
     },
     "/api/v1/auth/verify": {
       "post": {
-        "description": "On success, sets the session cookie (see docs/API_CONTRACT.md#hosts-cors-and-cookies) and returns the signed-in user.",
+        "description": "The first successful verify creates the account. Sets the session cookie on success (see docs/API_CONTRACT.md#hosts-cors-and-cookies).",
         "operationId": "verify_authentication",
         "requestBody": {
           "content": {
@@ -478,7 +517,7 @@
                 }
               }
             },
-            "description": "Invalid challenge"
+            "description": "OTP_INVALID"
           },
           "422": {
             "content": {

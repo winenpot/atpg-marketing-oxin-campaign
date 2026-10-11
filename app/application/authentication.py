@@ -7,11 +7,32 @@ from typing import Protocol
 from uuid import UUID, uuid4
 
 from app.domain.authentication import AuthenticatedSession, AuthenticationChallenge
+from app.domain.phone import PhoneNumberError, normalize_iranian_mobile
 from app.domain.users import AccountStatus, User, VerificationStatus
 
 
 class AuthenticationError(Exception):
     """Raised for any invalid authentication attempt."""
+
+
+class PhoneInvalidError(AuthenticationError):
+    """Not an Iranian mobile number, in any shape we try."""
+
+
+class ResendCooldownError(AuthenticationError):
+    """A code was already sent to this number less than the cooldown ago."""
+
+    def __init__(self, retry_after_seconds: int) -> None:
+        super().__init__("resend cooldown active")
+        self.retry_after_seconds = retry_after_seconds
+
+
+class DailyLimitError(AuthenticationError):
+    """Too many codes requested for this number in the last 24 hours."""
+
+
+class SmsError(Exception):
+    """Raised by an SmsSender when delivery fails for any reason."""
 
 
 class UserRepository(Protocol):
@@ -35,6 +56,12 @@ class AuthenticationChallengeRepository(Protocol):
         self, user_id: UUID, now: datetime
     ) -> AuthenticationChallenge | None: ...
 
+    async def get_most_recent_for_user(
+        self, user_id: UUID
+    ) -> AuthenticationChallenge | None: ...
+
+    async def count_created_since(self, user_id: UUID, since: datetime) -> int: ...
+
     async def increment_attempts(self, challenge_id: UUID) -> int: ...
 
     async def consume_if_matching(
@@ -55,6 +82,8 @@ class SessionRepository(Protocol):
 
 
 class AuthenticationCodeGenerator(Protocol):
+    code_length: int
+
     def generate(self) -> tuple[str, str, str]: ...
 
     def hash_code(self, code: str, salt: str) -> str: ...
@@ -64,8 +93,8 @@ class Clock(Protocol):
     def now(self) -> datetime: ...
 
 
-class EmailSender(Protocol):
-    async def send_verification_code(self, identifier: str, code: str) -> None: ...
+class SmsSender(Protocol):
+    async def send_otp(self, phone: str, code: str, purpose: str) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +102,15 @@ class AuthenticationSettings:
     challenge_ttl: timedelta
     session_ttl: timedelta
     max_verification_attempts: int
+    resend_cooldown: timedelta
+    daily_limit: int
+
+
+@dataclass(frozen=True, slots=True)
+class RequestChallengeResult:
+    resend_after_seconds: int
+    expires_in_seconds: int
+    code_length: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,7 +127,7 @@ class AuthenticationService:
         sessions: SessionRepository,
         code_generator: AuthenticationCodeGenerator,
         clock: Clock,
-        email_sender: EmailSender,
+        sms_sender: SmsSender,
         settings: AuthenticationSettings,
     ) -> None:
         self._users = users
@@ -97,17 +135,42 @@ class AuthenticationService:
         self._sessions = sessions
         self._code_generator = code_generator
         self._clock = clock
-        self._email_sender = email_sender
+        self._sms_sender = sms_sender
         self._settings = settings
 
-    async def request_challenge(self, identifier: str) -> None:
-        normalized_identifier = self.normalize_identifier(identifier)
+    async def request_challenge(self, identifier: str) -> RequestChallengeResult:
+        try:
+            phone = normalize_iranian_mobile(identifier)
+        except PhoneNumberError as error:
+            raise PhoneInvalidError(str(error)) from error
         now = self._clock.now()
-        user = await self._users.get_by_identifier(normalized_identifier)
+        result = RequestChallengeResult(
+            resend_after_seconds=int(self._settings.resend_cooldown.total_seconds()),
+            expires_in_seconds=int(self._settings.challenge_ttl.total_seconds()),
+            code_length=self._code_generator.code_length,
+        )
+
+        user = await self._users.get_by_identifier(phone)
+        is_new_user = user is None
         if user is None:
-            user = await self._users.create(normalized_identifier, now)
+            user = await self._users.create(phone, now)
         elif user.account_status is AccountStatus.INACTIVE:
-            return
+            # Same response as a real send: an inactive account must not be
+            # distinguishable from a fresh number by response shape alone.
+            return result
+
+        recent = await self._challenges.get_most_recent_for_user(user.id)
+        if recent is not None:
+            elapsed_seconds = (now - recent.created_at).total_seconds()
+            remaining = self._settings.resend_cooldown.total_seconds() - elapsed_seconds
+            if remaining > 0:
+                raise ResendCooldownError(int(remaining) + 1)
+
+        sent_in_last_24h = await self._challenges.count_created_since(
+            user.id, now - timedelta(hours=24)
+        )
+        if sent_in_last_24h >= self._settings.daily_limit:
+            raise DailyLimitError("too many codes requested for this number today")
 
         code, salt, code_hash = self._code_generator.generate()
         challenge = AuthenticationChallenge(
@@ -121,13 +184,24 @@ class AuthenticationService:
             consumed_at=None,
             created_at=now,
         )
+        purpose = "signup" if is_new_user else "login"
+        # Send before persisting: a delivery failure must not start the
+        # resend cooldown or count against the daily limit for a code the
+        # user never received.
+        try:
+            await self._sms_sender.send_otp(phone, code, purpose)
+        except SmsError as error:
+            raise AuthenticationError("could not send verification code") from error
         await self._challenges.create(challenge)
-        await self._email_sender.send_verification_code(normalized_identifier, code)
+        return result
 
     async def verify_challenge(self, identifier: str, code: str) -> VerificationResult:
-        normalized_identifier = self.normalize_identifier(identifier)
+        try:
+            phone = normalize_iranian_mobile(identifier)
+        except PhoneNumberError as error:
+            raise AuthenticationError("invalid authentication challenge") from error
         now = self._clock.now()
-        user = await self._users.get_by_identifier(normalized_identifier)
+        user = await self._users.get_by_identifier(phone)
         if user is None or user.account_status is AccountStatus.INACTIVE:
             raise AuthenticationError("invalid authentication challenge")
 
@@ -191,13 +265,6 @@ class AuthenticationService:
         if user is None:
             raise AuthenticationError("authentication required")
         return user
-
-    @staticmethod
-    def normalize_identifier(identifier: str) -> str:
-        normalized = identifier.strip().casefold()
-        if not normalized or "@" not in normalized:
-            raise AuthenticationError("invalid authentication identifier")
-        return normalized
 
     @staticmethod
     def hash_secret(secret: str) -> str:

@@ -10,16 +10,30 @@ from app.domain.users import User
 
 
 class AuthenticationRequest(BaseModel):
-    identifier: str = Field(min_length=3, max_length=320)
+    identifier: str = Field(
+        min_length=3,
+        max_length=32,
+        examples=["0912 345 6789"],
+        description=(
+            "An Iranian mobile number: Persian or Latin digits, spaces, "
+            "+98/0098/98 or a leading 0. 'identifier' kept as the field name "
+            "for one release so an older client sending 'phone'-shaped "
+            "values here keeps working."
+        ),
+    )
 
 
 class AuthenticationVerification(BaseModel):
-    identifier: str = Field(min_length=3, max_length=320)
+    identifier: str = Field(min_length=3, max_length=32, examples=["0912 345 6789"])
     code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
 
 
 class AuthenticationRequested(BaseModel):
-    message: str
+    resend_after_seconds: int = Field(
+        description="Seconds to wait before POSTing /auth/request again."
+    )
+    expires_in_seconds: int = Field(description="How long the code stays valid.")
+    code_length: int
 
 
 class UserResponse(BaseModel):
