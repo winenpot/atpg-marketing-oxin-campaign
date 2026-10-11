@@ -15,9 +15,6 @@ services:
         value: 10000
       - key: FORWARDED_ALLOW_IPS
         sync: false
-      - key: API_KEY
-        generateValue: true
-        sync: false
       - key: REDEMPTION_CODE_PEPPER
         generateValue: true
         sync: false

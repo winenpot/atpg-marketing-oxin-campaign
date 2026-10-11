@@ -62,7 +62,8 @@ deleted once this vault is confirmed to carry everything load-bearing from it.
   Canonical frontend repo should live in the company group.
 - Stay on FastAPI + SQLAdmin (no Django switch); challenges, prizes, events and
   tournaments become admin-editable rows (typed columns + JSONB params).
-- API_KEY to be dropped (unused; a browser app can't keep a secret).
+- API_KEY dropped 2026-10-11 (unused; a browser app can't keep a secret). No
+  server-to-server integration needs it; add a scoped key if one ever does.
 - Sizing (estimate only, servers not yet measured): max 40k users, 10k active at
   a spike -> plan for 1,000 req/s; 2 servers (app 4 vCPU/8 GB, DB 4 vCPU/16 GB
   NVMe) + continuous off-site WAL backups. Method to confirm it:

@@ -75,7 +75,6 @@ All settings are environment variables (or `.env`), validated at startup by
 | `REDEMPTION_DAILY_LIMIT_PER_USER` | Codes one player may redeem per Tehran day (default 20) |
 | `CAMPAIGN_TIMEZONE` | Game days and weeks (default `Asia/Tehran`) |
 | `DB_STATEMENT_TIMEOUT_MS` | Kills runaway queries (default 15000) |
-| `API_KEY` | Server-to-server key, required outside development |
 | `SESSION_COOKIE_NAME`, `AUTH_*` | Sessions and one-time codes |
 | `RATE_LIMIT_*` | In-process backstop limiter; real limits live in nginx |
 | `CORS_ORIGINS` | Only needed when the frontend is on another origin (production is same-origin) |

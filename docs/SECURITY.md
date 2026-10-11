@@ -127,7 +127,6 @@ Submission URLs: parse, accept only `https://instagram.com` or `https://www.inst
 |---|---|---|---|
 | `REDEMPTION_CODE_PEPPER` | API, code generator | Password manager (two holders), server `.env` | **Never after codes are printed**: all hashes depend on it. If it leaks: void affected batches, print new ones with a new pepper (a second-pepper scheme would be needed; ask before doing this) |
 | OTP secret (B10) | API | Password manager, `.env` | Any time; outstanding codes just stop working |
-| `API_KEY` | Server-to-server integrations | Password manager, `.env` | On staff change |
 | Database passwords | API, worker, backups | `.env` on the server | On staff change |
 | SMS provider API keys | Worker | `.env` | On staff change; immediately if leaked (the key is part of the request URL for some providers, so never log URLs) |
 | Backup repository password | Backup job | Password manager (two holders) | Rarely; losing it loses every backup |

@@ -21,7 +21,6 @@ services:
       APP_NAME: Lottery Passport API
       ENVIRONMENT: development
       PORT: 8000
-      API_KEY: local_development_only
       REDEMPTION_CODE_PEPPER: local_development_only_pepper_not_secret_0123456789
       REDEMPTION_DAILY_LIMIT_PER_USER: 20
       CAMPAIGN_TIMEZONE: Asia/Tehran

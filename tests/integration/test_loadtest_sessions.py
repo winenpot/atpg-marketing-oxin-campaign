@@ -32,7 +32,6 @@ def test_refuses_to_run_in_production() -> None:
     settings = Settings(
         environment="production",
         database_url="postgresql+asyncpg://app:secret@postgres:5432/db",
-        api_key="key",
         redemption_code_pepper="p" * 48,
         _env_file=None,
     )

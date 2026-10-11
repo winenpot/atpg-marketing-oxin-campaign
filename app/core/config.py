@@ -13,7 +13,6 @@ class Settings(BaseSettings):
     environment: str = "development"
     port: int = Field(default=8000, ge=1, le=65535)
     forwarded_allow_ips: str = "127.0.0.1"
-    api_key: SecretStr | None = None
     redemption_code_pepper: SecretStr | None = None
     redemption_daily_limit_per_user: int = Field(default=20, ge=1, le=1_000)
     redemption_max_invalid_attempts_per_hour: int = Field(default=10, ge=1, le=1_000)
@@ -52,7 +51,7 @@ class Settings(BaseSettings):
             return value.replace("postgresql://", "postgresql+asyncpg://", 1)
         return value
 
-    @field_validator("api_key", "redemption_code_pepper", mode="before")
+    @field_validator("redemption_code_pepper", mode="before")
     @classmethod
     def treat_blank_secrets_as_unset(cls, value: object) -> object:
         # ".env.example" ships "REDEMPTION_CODE_PEPPER=" (empty). An empty
@@ -84,8 +83,6 @@ class Settings(BaseSettings):
             raise ValueError(
                 "DATABASE_URL must reference an external database outside development"
             )
-        if self.environment.lower() in deployment_environments and self.api_key is None:
-            raise ValueError("API_KEY must be configured outside development")
         if self.environment.lower() in deployment_environments and (
             self.redemption_code_pepper is None
             or len(self.redemption_code_pepper.get_secret_value()) < 32

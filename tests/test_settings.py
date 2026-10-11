@@ -48,7 +48,6 @@ def test_production_accepts_compose_service_database() -> None:
     settings = Settings(
         environment="production",
         database_url="postgresql+asyncpg://app:secret@postgres:5432/lottery_passport",
-        api_key="test-api-key",
         redemption_code_pepper="p" * 48,
         _env_file=None,
     )
@@ -62,29 +61,17 @@ def test_production_rejects_a_short_or_blank_pepper() -> None:
             Settings(
                 environment="production",
                 database_url="postgresql+asyncpg://app:secret@postgres:5432/db",
-                api_key="test-api-key",
                 redemption_code_pepper=pepper,
                 _env_file=None,
             )
 
 
 def test_blank_secrets_are_treated_as_unset() -> None:
-    settings = Settings(redemption_code_pepper="", api_key=" ", _env_file=None)
+    settings = Settings(redemption_code_pepper="", _env_file=None)
 
     assert settings.redemption_code_pepper is None
-    assert settings.api_key is None
 
 
 def test_unknown_campaign_timezone_is_rejected() -> None:
     with pytest.raises(ValueError, match="time zone"):
         Settings(campaign_timezone="Mars/Olympus", _env_file=None)
-
-
-def test_demo_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("API_KEY", raising=False)
-    with pytest.raises(ValueError, match="API_KEY"):
-        Settings(
-            environment="demo",
-            database_url="postgresql+asyncpg://user:password@db.example/lottery_passport",
-            _env_file=None,
-        )
