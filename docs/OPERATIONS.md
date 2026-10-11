@@ -159,6 +159,21 @@ Then follow [CODES.md](CODES.md#handing-codes-to-the-printer): encrypt, send, co
 checksum, delete. At launch: `python -m scripts.code_batches activate <batch-id>`. To kill a
 leaked batch: `python -m scripts.code_batches void <batch-id>` (seconds; redeemed codes stay redeemed).
 
+## Staff accounts
+
+There is no "first admin" API route by design (a player can never promote themselves).
+Sign up normally (so the account exists), then promote it directly on the database:
+
+```bash
+docker compose -f compose.prod.yml run --rm api python -m scripts.admins promote <identifier>
+docker compose -f compose.prod.yml run --rm api python -m scripts.admins list
+docker compose -f compose.prod.yml run --rm api python -m scripts.admins demote <identifier>
+```
+
+`<identifier>` is whatever the account signed up with (today: an email; once phone OTP
+ships, an E.164 number). No admin-only routes exist yet; `app/api/deps.require_admin` is
+ready for the first one that does.
+
 ## SMS provider
 
 - Open accounts with **two** Iranian SMS providers under the company (they need company documents; Mehdi item M09).

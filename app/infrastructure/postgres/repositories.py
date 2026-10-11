@@ -17,7 +17,7 @@ from app.application.wallets import WalletReader
 from app.domain.authentication import AuthenticatedSession, AuthenticationChallenge
 from app.domain.ledger import LedgerEntry, LedgerReason, Wallet
 from app.domain.passports import Campaign, PassportProgress
-from app.domain.users import AccountStatus, User, VerificationStatus
+from app.domain.users import AccountStatus, User, UserRole, VerificationStatus
 from app.infrastructure.postgres.models import (
     AuthenticationChallengeModel,
     CoinLedgerEntryModel,
@@ -35,6 +35,7 @@ def user_from_model(model: UserModel) -> User:
         display_name=model.display_name,
         account_status=AccountStatus(model.account_status),
         verification_status=VerificationStatus(model.verification_status),
+        role=UserRole(model.role),
         created_at=model.created_at,
         updated_at=model.updated_at,
     )
@@ -100,6 +101,7 @@ class PostgreSQLUserRepository(UserRepository):
             identifier=identifier,
             account_status=AccountStatus.ACTIVE.value,
             verification_status=VerificationStatus.UNVERIFIED.value,
+            role=UserRole.PLAYER.value,
             created_at=now,
             updated_at=now,
         )

@@ -10,7 +10,7 @@ from app.application.authentication import (
     AuthenticationSettings,
 )
 from app.domain.authentication import AuthenticatedSession, AuthenticationChallenge
-from app.domain.users import AccountStatus, User, VerificationStatus
+from app.domain.users import AccountStatus, User, UserRole, VerificationStatus
 from app.infrastructure.authentication import SecureAuthenticationCodeGenerator
 
 
@@ -42,6 +42,7 @@ class FakeUsers:
             display_name=None,
             account_status=AccountStatus.ACTIVE,
             verification_status=VerificationStatus.UNVERIFIED,
+            role=UserRole.PLAYER,
             created_at=now,
             updated_at=now,
         )

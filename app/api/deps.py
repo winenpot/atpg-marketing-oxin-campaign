@@ -9,7 +9,7 @@ from app.application.passports import PassportService
 from app.application.ports import ReadinessChecker
 from app.application.redemption_codes import RedemptionService
 from app.application.wallets import WalletService
-from app.domain.users import User
+from app.domain.users import User, UserRole
 
 session_cookie = APIKeyCookie(
     name="lottery_passport_session",
@@ -48,3 +48,19 @@ async def get_current_user(
         raise ApiError(
             status.HTTP_401_UNAUTHORIZED, "AUTH_REQUIRED", "authentication required"
         ) from error
+
+
+async def require_admin(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> User:
+    """Gate for staff-only routes.
+
+    No admin routes exist yet; this is the dependency the first one (an
+    admin panel, a manual-adjustment endpoint, ...) should use, so "signed
+    in" and "signed in as staff" stay two separate checks.
+    """
+    if current_user.role is not UserRole.ADMIN:
+        raise ApiError(
+            status.HTTP_403_FORBIDDEN, "ADMIN_REQUIRED", "admin role required"
+        )
+    return current_user

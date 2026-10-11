@@ -1,0 +1,97 @@
+"""Promote or demote a user between the ``player`` and ``admin`` roles.
+
+Usage::
+
+    uv run python -m scripts.admins list
+    uv run python -m scripts.admins promote <identifier>
+    uv run python -m scripts.admins demote <identifier>
+
+This is the superuser bootstrap: there is no "first admin" API route (a
+player can never promote themselves), so the very first admin, and every
+later one, is made the same way -- direct database access, same as
+scripts/code_batches.py. ``identifier`` is whatever the user signed up with
+(today: an email; once phone OTP ships, an E.164 phone number).
+
+The user must already exist (sign up first, then promote); this script does
+not create accounts.
+"""
+
+import argparse
+import asyncio
+import sys
+
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.core.config import get_settings
+from app.domain.users import UserRole
+from app.infrastructure.postgres.database import PostgreSQLAdapter
+from app.infrastructure.postgres.models import UserModel
+
+
+async def list_admins(factory: async_sessionmaker[AsyncSession]) -> list[str]:
+    statement = (
+        select(UserModel.id, UserModel.identifier, UserModel.created_at)
+        .where(UserModel.role == UserRole.ADMIN.value)
+        .order_by(UserModel.created_at)
+    )
+    async with factory() as session:
+        rows = (await session.execute(statement)).all()
+    return [
+        f"{user_id}  {identifier:<40}  admin since {created_at.isoformat()}"
+        for user_id, identifier, created_at in rows
+    ]
+
+
+async def set_role(
+    factory: async_sessionmaker[AsyncSession], identifier: str, role: UserRole
+) -> bool:
+    """Set ``identifier``'s role. Returns False if no such user exists."""
+    async with factory() as session, session.begin():
+        result = await session.execute(
+            update(UserModel)
+            .where(UserModel.identifier == identifier)
+            .values(role=role.value)
+            .returning(UserModel.id)
+        )
+        return result.scalar_one_or_none() is not None
+
+
+async def main_async(arguments: argparse.Namespace) -> int:
+    database = PostgreSQLAdapter(get_settings())
+    try:
+        if arguments.command == "list":
+            lines = await list_admins(database.session_factory)
+            if not lines:
+                print("no admins", file=sys.stderr)
+                return 0
+            for line in lines:
+                print(line)
+            return 0
+        role = UserRole.ADMIN if arguments.command == "promote" else UserRole.PLAYER
+        changed = await set_role(database.session_factory, arguments.identifier, role)
+    finally:
+        await database.dispose()
+    if not changed:
+        print(
+            f"no user with identifier {arguments.identifier!r}; they must sign up "
+            "first",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"{arguments.identifier} is now {role.value}", file=sys.stderr)
+    return 0
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("list")
+    for name in ("promote", "demote"):
+        command = commands.add_parser(name)
+        command.add_argument("identifier")
+    raise SystemExit(asyncio.run(main_async(parser.parse_args())))
+
+
+if __name__ == "__main__":
+    main()

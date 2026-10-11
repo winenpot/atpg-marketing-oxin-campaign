@@ -256,6 +256,10 @@
             "title": "Identifier",
             "type": "string"
           },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -272,6 +276,7 @@
           "display_name",
           "account_status",
           "verification_status",
+          "role",
           "created_at",
           "updated_at"
         ],
