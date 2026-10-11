@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
 
@@ -7,6 +7,7 @@ from app.api.deps import (
     get_current_user,
     get_passport_service,
 )
+from app.api.errors import ErrorResponse
 from app.api.v1.schemas import (
     PassportProgressResponse,
     UserResponse,
@@ -18,15 +19,30 @@ from app.domain.users import User
 
 router = APIRouter(tags=["users"])
 
+_AUTH_REQUIRED: dict[int | str, dict[str, Any]] = {
+    401: {"model": ErrorResponse, "description": "Not signed in"}
+}
 
-@router.get("/me", response_model=UserResponse)
+
+@router.get(
+    "/me",
+    response_model=UserResponse,
+    summary="The signed-in user",
+    responses=_AUTH_REQUIRED,
+)
 async def get_me(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> UserResponse:
     return UserResponse.from_domain(current_user)
 
 
-@router.patch("/me", response_model=UserResponse)
+@router.patch(
+    "/me",
+    response_model=UserResponse,
+    summary="Update the signed-in user",
+    description="Only ``display_name`` can be changed here today.",
+    responses=_AUTH_REQUIRED,
+)
 async def update_me(
     payload: UserUpdate,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -36,7 +52,16 @@ async def update_me(
     return UserResponse.from_domain(user)
 
 
-@router.get("/me/passports", response_model=list[PassportProgressResponse])
+@router.get(
+    "/me/passports",
+    response_model=list[PassportProgressResponse],
+    summary="Per-city passport progress",
+    description=(
+        "Parked for the MVP (ADR 0009): kept out of the player-facing contract "
+        "but still tracked."
+    ),
+    responses=_AUTH_REQUIRED,
+)
 async def get_my_passports(
     current_user: Annotated[User, Depends(get_current_user)],
     service: Annotated[PassportService, Depends(get_passport_service)],

@@ -11,6 +11,23 @@ frontend, keyed by ``code``.
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+
+
+class ErrorDetail(BaseModel):
+    code: str = Field(examples=["CODE_MISTYPED"])
+    message: str = Field(examples=["One character looks mistyped; check the code."])
+
+
+class ErrorResponse(BaseModel):
+    """The shape of every error body; see docs/API_CONTRACT.md#errors.
+
+    ``responses={...}`` on a route should reference this model so /docs and
+    the generated OpenAPI schema show the real envelope, not FastAPI's
+    default ``{"detail": "..."}``.
+    """
+
+    error: ErrorDetail
 
 
 class ApiError(Exception):

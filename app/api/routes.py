@@ -17,12 +17,26 @@ class HealthResponse(BaseModel):
     status: str
 
 
-@router.get("/health", response_model=HealthResponse, status_code=status.HTTP_200_OK)
+@router.get(
+    "/health",
+    response_model=HealthResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["health"],
+    summary="Process liveness",
+    description="Always 200 once the process has started. Used by load balancers.",
+)
 async def health() -> HealthResponse:
     return HealthResponse(status="ok")
 
 
-@router.get("/ready", response_model=HealthResponse)
+@router.get(
+    "/ready",
+    response_model=HealthResponse,
+    tags=["health"],
+    summary="Database readiness",
+    description="503 if the database is unreachable. Used by the Render health check.",
+    responses={503: {"description": "Database unreachable"}},
+)
 async def ready(
     readiness_checker: ReadinessChecker = Depends(get_readiness_checker),
 ) -> HealthResponse:

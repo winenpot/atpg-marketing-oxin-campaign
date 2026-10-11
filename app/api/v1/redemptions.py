@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, status
 
 from app.api.deps import get_current_user, get_redemption_service, get_wallet_service
-from app.api.errors import ApiError
+from app.api.errors import ApiError, ErrorResponse
 from app.api.v1.schemas import RedeemCodeRequest, RedemptionResponse, WalletResponse
 from app.application.redemption_codes import (
     RedemptionError,
@@ -50,12 +50,23 @@ _ERRORS: dict[RedemptionErrorCode, tuple[int, str]] = {
 @router.post(
     "/redemptions",
     response_model=RedemptionResponse,
+    summary="Redeem a printed code",
+    description=(
+        "Redeem a printed code. Safe to retry: a repeat by the same user "
+        "returns ``replayed: true`` instead of an error."
+    ),
     responses={
-        400: {"description": "CODE_MALFORMED or CODE_MISTYPED"},
-        401: {"description": "Not signed in"},
-        404: {"description": "CODE_INVALID"},
-        409: {"description": "CODE_ALREADY_REDEEMED"},
-        429: {"description": "REDEMPTION_DAILY_LIMIT"},
+        400: {
+            "model": ErrorResponse,
+            "description": "CODE_MALFORMED or CODE_MISTYPED",
+        },
+        401: {"model": ErrorResponse, "description": "Not signed in"},
+        404: {"model": ErrorResponse, "description": "CODE_INVALID"},
+        409: {"model": ErrorResponse, "description": "CODE_ALREADY_REDEEMED"},
+        429: {
+            "model": ErrorResponse,
+            "description": "REDEMPTION_DAILY_LIMIT or CODE_ATTEMPTS_LIMITED",
+        },
     },
 )
 async def redeem_code(
@@ -63,7 +74,6 @@ async def redeem_code(
     current_user: Annotated[User, Depends(get_current_user)],
     service: Annotated[RedemptionService, Depends(get_redemption_service)],
 ) -> RedemptionResponse:
-    """Redeem a printed code. Safe to retry: a repeat returns ``replayed: true``."""
     try:
         result = await service.redeem(current_user.id, payload.code)
     except RedemptionError as error:
@@ -77,7 +87,12 @@ async def redeem_code(
     return RedemptionResponse.from_result(result)
 
 
-@router.get("/me/wallet", response_model=WalletResponse)
+@router.get(
+    "/me/wallet",
+    response_model=WalletResponse,
+    summary="Coin balance and recent ledger entries",
+    responses={401: {"model": ErrorResponse, "description": "Not signed in"}},
+)
 async def get_my_wallet(
     current_user: Annotated[User, Depends(get_current_user)],
     service: Annotated[WalletService, Depends(get_wallet_service)],

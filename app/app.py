@@ -38,6 +38,36 @@ from app.infrastructure.postgres.unit_of_work import SqlAlchemyUnitOfWork
 logger = logging.getLogger(__name__)
 
 
+APP_VERSION = "0.1.0"  # keep in step with pyproject.toml [project].version
+
+OPENAPI_TAGS = [
+    {
+        "name": "authentication",
+        "description": (
+            "Sign-in and session lifecycle. See API_CONTRACT.md#authentication."
+        ),
+    },
+    {
+        "name": "users",
+        "description": (
+            "The signed-in player's own profile. "
+            "See API_CONTRACT.md#config-and-profile."
+        ),
+    },
+    {
+        "name": "redemptions",
+        "description": (
+            "Scanning printed codes and the coin wallet. "
+            "See API_CONTRACT.md#scanning-codes."
+        ),
+    },
+    {
+        "name": "health",
+        "description": "Liveness/readiness probes. See API_CONTRACT.md#health.",
+    },
+]
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     resolved_settings = settings or get_settings()
     configure_logging(resolved_settings)
@@ -103,6 +133,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     application = FastAPI(
         title=resolved_settings.app_name,
+        version=APP_VERSION,
+        description=(
+            "Backend for the TorshX x Oxin campaign passport. The contract is "
+            "docs/API_CONTRACT.md; if this schema and that file disagree about a "
+            "live endpoint, the contract wins and it is a bug here."
+        ),
+        openapi_tags=OPENAPI_TAGS,
+        generate_unique_id_function=lambda route: route.name,
+        docs_url="/docs"
+        if resolved_settings.environment.lower() != "production"
+        else None,
+        redoc_url=(
+            "/redoc" if resolved_settings.environment.lower() != "production" else None
+        ),
+        openapi_url=(
+            "/openapi.json"
+            if resolved_settings.environment.lower() != "production"
+            else None
+        ),
         lifespan=lifespan,
     )
     application.add_middleware(
@@ -110,7 +159,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_origins=resolved_settings.allowed_cors_origins,
         allow_credentials=resolved_settings.allowed_cors_origins != ["*"],
         allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Content-Type", "Authorization", "X-API-Key"],
+        allow_headers=["Content-Type", "Authorization"],
     )
     application.add_middleware(
         RateLimitMiddleware,
