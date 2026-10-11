@@ -50,9 +50,12 @@ contract match, Persian error copy, loading/empty/offline states, and
 testing on a real Android and iPhone.
 
 He was asked (Persian, via the user) to research QR codes carrying a
-variable and SMS OTP autofill. The `/r/:code` guidance already given to
-him matches the QR-link decision made 2026-10-07 (path form, not a URL
-fragment) — see [[Decisions]] — so no correction is needed there.
+variable and SMS OTP autofill. **QR format corrected 2026-10-10:** the
+final format is the fragment form (`https://torshx.com/r#<CITY>-XXX-XXX-XXX`),
+not the path form given to him earlier. He was also advised to read the
+host from build config, not hard-code it. His demo was reviewed
+(http://86.104.82.71:8000/). See [[Decisions]] for the full QR-format
+decision and `../API_CONTRACT.md` for the demo-to-contract migration table.
 
 ## CEO
 

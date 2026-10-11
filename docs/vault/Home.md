@@ -12,6 +12,8 @@ FMCG company's drink-lottery campaign at gaming lounges.
 
 - [[People]] — the team, who owns what, how to work with each person
 - [[Decisions]] — running log of decisions made during implementation
+- [[Findings]] — technical investigations and measurements (server benchmarks,
+  load tests, API research, demo review); placeholders for pending work
 - Architecture, security, operations docs stay in `../ARCHITECTURE.md`,
   `../SECURITY.md`, `../OPERATIONS.md` (repo root `docs/`), not duplicated here
 
