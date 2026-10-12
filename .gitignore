@@ -37,3 +37,8 @@ HANDOFF.md
 
 # Obsidian per-person workspace state (notes themselves are tracked)
 docs/vault/.obsidian/
+
+# Graphify: keep GRAPH_REPORT.md, graph.json, manifest.json, graph.html; ignore working state
+graphify-out/.graphify_*
+graphify-out/20*/
+graphify-out/cost.json
