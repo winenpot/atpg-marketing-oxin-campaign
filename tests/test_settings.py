@@ -134,3 +134,15 @@ def test_public_app_origin_is_normalized_and_validated() -> None:
         Settings(public_app_origin="https://torshx.com/r", _env_file=None)
     with pytest.raises(ValueError, match="must use https"):
         _deployed(public_app_origin="http://torshx.com")
+
+
+def test_demo_environment_may_use_http_and_wildcard_origins() -> None:
+    settings = Settings(
+        environment="demo",
+        redemption_code_pepper=_PEPPER,
+        database_url=_EXTERNAL_DB,
+        cors_origins='["http://86.104.82.71:8000"]',
+        _env_file=None,  # type: ignore[call-arg]
+    )
+
+    assert settings.allowed_cors_origins == ["http://86.104.82.71:8000"]

@@ -31,7 +31,7 @@ to Docker and servers: every step is a command you can copy. Files referenced he
 | Pepper | Dev value | Its own value | Production value (password manager) |
 | SMS | Console sender (prints to logs) | Real provider, limited to team numbers if the provider allows | Real providers |
 
-Outside development the app refuses to start if `CORS_ORIGINS` contains `*` or a non-https origin (`http://localhost` is the only exception), or if `PUBLIC_APP_ORIGIN` is not https. `SESSION_COOKIE_SAMESITE` stays `lax` (same-origin proxy); `none` is for a cross-site frontend, needs Secure cookies and works in Chrome only.
+On staging and production the app refuses to start if `CORS_ORIGINS` contains `*` or a non-https origin (`http://localhost` is the only exception), or if `PUBLIC_APP_ORIGIN` is not https. `SESSION_COOKIE_SAMESITE` stays `lax` (same-origin proxy); `none` is for a cross-site frontend, needs Secure cookies and works in Chrome only.
 
 Staging and production never share a database, secrets or a pepper. Codes generated on staging can never work in production.
 

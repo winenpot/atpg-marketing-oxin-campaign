@@ -125,7 +125,9 @@ class Settings(BaseSettings):
             )
         if self.session_cookie_samesite == "none" and not self.secure_session_cookies:
             raise ValueError("SESSION_COOKIE_SAMESITE=none requires Secure cookies")
-        if self.environment.lower() != "development":
+        # demo is the throwaway test deployment (test API, test DB, test
+        # frontend, possibly plain http): only staging/production are strict.
+        if self.environment.lower() in {"staging", "production"}:
             self._require_safe_origins()
         return self
 
