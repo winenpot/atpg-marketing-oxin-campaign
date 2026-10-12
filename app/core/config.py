@@ -1,6 +1,6 @@
 import json
 from functools import lru_cache
-from typing import Self
+from typing import Literal, Self
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     # Applied to every API/worker connection; migrations use their own engine.
     db_statement_timeout_ms: int = Field(default=15_000, ge=100, le=600_000)
     cors_origins: str = '["http://localhost:3000"]'
+    # "none" is for a cross-site frontend (Chrome only; Safari/Firefox block it).
+    # Prefer a same-origin proxy and keep "lax" (docs/API_CONTRACT.md, hosting rules).
+    session_cookie_samesite: Literal["lax", "strict", "none"] = "lax"
+    # Public origin of the app (scheme + host, no path); builds the QR URLs.
+    # Printed QR codes freeze it, so it is never hard-coded.
+    public_app_origin: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -63,6 +69,27 @@ class Settings(BaseSettings):
         if isinstance(value, str) and not value.strip():
             return None
         return value
+
+    @field_validator("public_app_origin", mode="before")
+    @classmethod
+    def normalize_public_app_origin(cls, value: object) -> object:
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return None
+        if not isinstance(value, str):
+            return value
+        origin = value.strip().rstrip("/")
+        parsed = urlparse(origin)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.path
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError(
+                "PUBLIC_APP_ORIGIN must be scheme + host only, e.g. https://torshx.com"
+            )
+        return origin
 
     @field_validator("campaign_timezone")
     @classmethod
@@ -96,7 +123,28 @@ class Settings(BaseSettings):
                 "development (generate with: python -c "
                 '"import secrets; print(secrets.token_urlsafe(48))")'
             )
+        if self.session_cookie_samesite == "none" and not self.secure_session_cookies:
+            raise ValueError("SESSION_COOKIE_SAMESITE=none requires Secure cookies")
+        if self.environment.lower() != "development":
+            self._require_safe_origins()
         return self
+
+    def _require_safe_origins(self) -> None:
+        """Outside development: no wildcard, and https (loopback http is fine)."""
+        origins = self.allowed_cors_origins
+        if "*" in origins:
+            raise ValueError("CORS_ORIGINS must not be '*' outside development")
+        for origin in [
+            *origins,
+            *([self.public_app_origin] if self.public_app_origin else []),
+        ]:
+            parsed = urlparse(origin)
+            loopback = parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+            if parsed.scheme != "https" and not (parsed.scheme == "http" and loopback):
+                raise ValueError(
+                    f"origin {origin!r} must use https outside development "
+                    "(CORS_ORIGINS / PUBLIC_APP_ORIGIN)"
+                )
 
     @property
     def allowed_cors_origins(self) -> list[str]:

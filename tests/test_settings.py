@@ -75,3 +75,62 @@ def test_blank_secrets_are_treated_as_unset() -> None:
 def test_unknown_campaign_timezone_is_rejected() -> None:
     with pytest.raises(ValueError, match="time zone"):
         Settings(campaign_timezone="Mars/Olympus", _env_file=None)
+
+
+_PEPPER = "p" * 40
+_EXTERNAL_DB = "postgresql+asyncpg://u:p@db.example/x"
+
+
+def _deployed(**overrides: object) -> Settings:
+    return Settings(
+        environment="staging",
+        redemption_code_pepper=_PEPPER,
+        database_url=_EXTERNAL_DB,
+        _env_file=None,
+        **overrides,  # type: ignore[arg-type]
+    )
+
+
+def test_wildcard_cors_is_rejected_outside_development() -> None:
+    with pytest.raises(ValueError, match="must not be '\\*'"):
+        _deployed(cors_origins="*")
+
+
+def test_http_cors_origin_is_rejected_outside_development() -> None:
+    with pytest.raises(ValueError, match="must use https"):
+        _deployed(cors_origins='["http://86.104.82.71:8000"]')
+
+
+def test_https_and_loopback_cors_origins_are_accepted_outside_development() -> None:
+    settings = _deployed(cors_origins='["https://torshx.com","http://localhost:5173"]')
+
+    assert settings.allowed_cors_origins == [
+        "https://torshx.com",
+        "http://localhost:5173",
+    ]
+
+
+def test_samesite_defaults_to_lax_and_rejects_unknown_values() -> None:
+    assert Settings(_env_file=None).session_cookie_samesite == "lax"
+    with pytest.raises(ValueError):
+        Settings(session_cookie_samesite="bogus", _env_file=None)  # type: ignore[arg-type]
+
+
+def test_samesite_none_needs_secure_cookies() -> None:
+    with pytest.raises(ValueError, match="requires Secure"):
+        Settings(session_cookie_samesite="none", _env_file=None)
+    assert _deployed(session_cookie_samesite="none").session_cookie_samesite == "none"
+
+
+def test_public_app_origin_is_normalized_and_validated() -> None:
+    assert (
+        Settings(
+            public_app_origin="https://torshx.com/", _env_file=None
+        ).public_app_origin
+        == "https://torshx.com"
+    )
+    assert Settings(public_app_origin="", _env_file=None).public_app_origin is None
+    with pytest.raises(ValueError, match="scheme \\+ host only"):
+        Settings(public_app_origin="https://torshx.com/r", _env_file=None)
+    with pytest.raises(ValueError, match="must use https"):
+        _deployed(public_app_origin="http://torshx.com")

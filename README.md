@@ -77,7 +77,9 @@ All settings are environment variables (or `.env`), validated at startup by
 | `DB_STATEMENT_TIMEOUT_MS` | Kills runaway queries (default 15000) |
 | `SESSION_COOKIE_NAME`, `AUTH_*` | Sessions and one-time codes |
 | `RATE_LIMIT_*` | In-process backstop limiter; real limits live in nginx |
-| `CORS_ORIGINS` | Only needed when the frontend is on another origin (production is same-origin) |
+| `CORS_ORIGINS` | Only needed when the frontend is on another origin (production is same-origin). Outside development: https only (http://localhost excepted), never `*` |
+| `SESSION_COOKIE_SAMESITE` | `lax` (default), `strict` or `none` (cross-site frontend, Chrome only) |
+| `PUBLIC_APP_ORIGIN` | Public origin used for QR URLs, e.g. `https://torshx.com`; default for `scripts.generate_codes --base-url` |
 | `LOG_LEVEL`, `LOG_JSON` | Logging |
 
 ## Everyday commands

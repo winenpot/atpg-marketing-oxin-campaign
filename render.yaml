@@ -42,6 +42,10 @@ services:
         value: "true"
       - key: CORS_ORIGINS
         sync: false
+      - key: SESSION_COOKIE_SAMESITE
+        value: lax
+      - key: PUBLIC_APP_ORIGIN
+        sync: false
       - key: RATE_LIMIT_REQUESTS
         value: 60
       - key: RATE_LIMIT_WINDOW_SECONDS

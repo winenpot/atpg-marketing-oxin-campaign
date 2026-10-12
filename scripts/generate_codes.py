@@ -202,6 +202,9 @@ async def main_async(arguments: argparse.Namespace) -> None:
     settings = get_settings()
     if settings.redemption_code_pepper is None:
         raise SystemExit("REDEMPTION_CODE_PEPPER must be set to generate codes")
+    base_url = arguments.base_url or settings.public_app_origin
+    if not base_url:
+        raise SystemExit("pass --base-url or set PUBLIC_APP_ORIGIN")
     database = PostgreSQLAdapter(settings)
     try:
         batch_id = await generate_batch(
@@ -210,7 +213,7 @@ async def main_async(arguments: argparse.Namespace) -> None:
             quantity=arguments.quantity,
             coins_per_code=arguments.coins_per_code,
             label=arguments.label,
-            base_url=arguments.base_url,
+            base_url=base_url,
             output=arguments.output,
             pepper=settings.redemption_code_pepper.get_secret_value(),
             format_id=arguments.format,
@@ -239,7 +242,9 @@ def main() -> None:
     parser.add_argument("--coins-per-code", type=int, default=0)
     parser.add_argument("--label", required=True, help="human description of the run")
     parser.add_argument(
-        "--base-url", required=True, help="public site, e.g. https://play.example.ir"
+        "--base-url",
+        default=None,
+        help="public site, e.g. https://torshx.com (default: PUBLIC_APP_ORIGIN)",
     )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(

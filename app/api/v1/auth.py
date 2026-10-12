@@ -108,7 +108,7 @@ async def verify_authentication(
         max_age=settings.auth_session_ttl_seconds,
         httponly=True,
         secure=settings.secure_session_cookies,
-        samesite="lax",
+        samesite=settings.session_cookie_samesite,
     )
     return UserResponse.from_domain(result.user)
 
@@ -126,4 +126,9 @@ async def logout(
     session_token: Annotated[str | None, Security(session_cookie)] = None,
 ) -> None:
     await service.logout(session_token)
-    response.delete_cookie(settings.session_cookie_name)
+    response.delete_cookie(
+        settings.session_cookie_name,
+        httponly=True,
+        secure=settings.secure_session_cookies,
+        samesite=settings.session_cookie_samesite,
+    )
