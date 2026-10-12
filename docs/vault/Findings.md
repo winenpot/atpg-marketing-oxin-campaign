@@ -221,6 +221,13 @@ Pool size per app worker: ___  max_connections result: ___
 Prepared statements: disabled|enabled (needs session mode): ___
 → Will feed into: OPERATIONS.md deploy checklist.
 
+### [ ] Cross-site session cookie on the demo (flagged 2026-10-12)
+
+Demo frontend `http://86.104.82.71:8000` calls the API on `https://lottery-passport.onrender.com`: different sites, so a `SameSite=lax` cookie may not be sent on fetches (login would succeed, `/me` would 401). Never tested end to end; CORS itself is allowed (`CORS_ORIGINS` on Render lists both origins; `demo` is exempt from the https rule).
+Test: sign in from the demo frontend, then call `GET /api/v1/me` from it. Result: ___
+Fix if it 401s: `SESSION_COOKIE_SAMESITE=none` (Chrome only) or, better, serve frontend and API from one origin (F3/Caddy). The cookie `Secure` flag is already on for `demo`.
+→ Will feed into: API_CONTRACT "Hosts, CORS and cookies", F3.
+
 ### [ ] k6 and staging environment setup
 
 Date ready: ___
