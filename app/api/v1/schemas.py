@@ -60,6 +60,13 @@ class UserResponse(BaseModel):
         )
 
 
+class UserPageResponse(BaseModel):
+    items: list[UserResponse]
+    next_cursor: str | None = Field(
+        description="Pass as ``cursor`` for the next page; null on the last page."
+    )
+
+
 class UserUpdate(BaseModel):
     display_name: str | None = Field(default=None, max_length=100)
 

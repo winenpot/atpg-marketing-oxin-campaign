@@ -2,11 +2,12 @@ from datetime import datetime
 from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.application.admin_users import UserCursor
 from app.application.authentication import (
     AuthenticationChallengeRepository,
     SessionRepository,
@@ -95,6 +96,25 @@ class PostgreSQLUserRepository(UserRepository):
         async with self._factory() as session:
             result = await session.get(UserModel, user_id)
             return user_from_model(result) if result else None
+
+    async def list_page(self, limit: int, after: UserCursor | None) -> list[User]:
+        statement = (
+            select(UserModel)
+            .order_by(UserModel.created_at.desc(), UserModel.id.desc())
+            .limit(limit)
+        )
+        if after is not None:
+            statement = statement.where(
+                or_(
+                    UserModel.created_at < after.created_at,
+                    and_(
+                        UserModel.created_at == after.created_at,
+                        UserModel.id < after.id,
+                    ),
+                )
+            )
+        async with self._factory() as session:
+            return [user_from_model(row) for row in await session.scalars(statement)]
 
     async def create(self, identifier: str, now: datetime) -> User:
         model = UserModel(

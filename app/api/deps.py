@@ -4,6 +4,7 @@ from fastapi import Depends, Request, Security, status
 from fastapi.security import APIKeyCookie
 
 from app.api.errors import ApiError
+from app.application.admin_users import AdminUserService
 from app.application.authentication import AuthenticationError, AuthenticationService
 from app.application.passports import PassportService
 from app.application.ports import ReadinessChecker
@@ -20,6 +21,10 @@ session_cookie = APIKeyCookie(
 
 def get_readiness_checker(request: Request) -> ReadinessChecker:
     return cast(ReadinessChecker, request.app.state.readiness_checker)
+
+
+def get_admin_user_service(request: Request) -> AdminUserService:
+    return cast(AdminUserService, request.app.state.admin_user_service)
 
 
 def get_authentication_service(request: Request) -> AuthenticationService:
@@ -55,9 +60,8 @@ async def require_admin(
 ) -> User:
     """Gate for staff-only routes.
 
-    No admin routes exist yet; this is the dependency the first one (an
-    admin panel, a manual-adjustment endpoint, ...) should use, so "signed
-    in" and "signed in as staff" stay two separate checks.
+    Every admin route depends on this, so "signed in" and "signed in as
+    staff" stay two separate checks.
     """
     if current_user.role is not UserRole.ADMIN:
         raise ApiError(

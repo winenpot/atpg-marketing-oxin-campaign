@@ -33,6 +33,7 @@ Parked features (not in the MVP contract): the city passport. See
 - [Weekly PS5 draw](#weekly-ps5-draw)
 - [Events and tournaments](#events-and-tournaments)
 - [Arrivals from QR links](#arrivals-from-qr-links)
+- [Admin](#admin)
 - [Health](#health)
 - [OpenAPI](#openapi)
 - [Frontend recipes](#frontend-recipes)
@@ -96,6 +97,8 @@ Switch on `code` and show your own Persian copy. `message` is for developers and
 | Code | HTTP | Meaning | What the app should do |
 |---|---|---|---|
 | `AUTH_REQUIRED` | 401 | No session, or it expired | Go to sign-in, then come back |
+| `ADMIN_REQUIRED` | 403 | Signed in, but not an admin (admin routes only) | Show "not allowed" |
+| `CURSOR_INVALID` | 400 | The `cursor` was not issued by the server | Restart from the first page |
 | `VALIDATION_FAILED` | 422 | Body or query failed validation; `error.fields` lists the fields | Highlight the fields |
 | `PHONE_INVALID` | 422 | Not an Iranian mobile number | Highlight the field |
 | `OTP_COOLDOWN` | 429 | A code was sent less than a minute ago | Countdown from `Retry-After` |
@@ -750,6 +753,28 @@ center fridge or poster) or `/go` (a link printed with the product).
 
 `204`. Records attribution for marketing reports (which venue brings players). It pays
 nothing. Unknown venue ids are stored as `unknown` without an error.
+
+## Admin
+
+Staff-only routes under `/api/v1/admin`. They need the session cookie of a user with
+`role: "admin"` (`401 AUTH_REQUIRED` when signed out, `403 ADMIN_REQUIRED` for a player).
+Grant the role with `uv run python -m scripts.admins promote <identifier>`; there is no
+API route for it.
+
+### `GET /api/v1/admin/users?limit=50&cursor=<opaque>` (live)
+
+Users, newest first. `limit` is 1–100 (default 50). Pass the previous response's
+`next_cursor` as `cursor`; the cursor is opaque, so do not build or parse it.
+
+```json
+{"items": [{"id": "…", "identifier": "+989…", "display_name": null, "account_status": "active",
+            "verification_status": "verified", "role": "player",
+            "created_at": "2026-10-12T08:00:00Z", "updated_at": "2026-10-12T08:00:00Z"}],
+ "next_cursor": "MjAyNi0xMC0xMlQwODowMDowMCswMDowMHw…"}
+```
+
+`next_cursor` is `null` on the last page. Paging is by `(created_at, id)`, so new signups
+never shift or repeat rows. Errors: `CURSOR_INVALID`, `ADMIN_REQUIRED`, `AUTH_REQUIRED`.
 
 ## Health
 

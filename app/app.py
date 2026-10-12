@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.errors import ApiError, api_error_handler, unhandled_error_handler
 from app.api.middleware import RateLimitMiddleware, RequestLoggingMiddleware
 from app.api.routes import router
+from app.application.admin_users import AdminUserService
 from app.application.authentication import AuthenticationService, AuthenticationSettings
 from app.application.failure_throttle import ThrottleSettings
 from app.application.passports import PassportService
@@ -99,6 +100,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             daily_limit=resolved_settings.otp_daily_limit_per_phone,
         ),
     )
+    admin_user_service = AdminUserService(
+        users=PostgreSQLUserRepository(database.session_factory)
+    )
     passport_service = PassportService(
         passports=PostgreSQLPassportRepository(database.session_factory)
     )
@@ -181,6 +185,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.state.passport_service = passport_service
     application.state.redemption_service = redemption_service
     application.state.wallet_service = wallet_service
+    application.state.admin_user_service = admin_user_service
     application.state.sms_sender = sms_sender
     application.state.settings = resolved_settings
     return application

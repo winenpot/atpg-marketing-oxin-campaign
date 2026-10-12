@@ -244,6 +244,35 @@
         "title": "RedemptionResponse",
         "type": "object"
       },
+      "UserPageResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/UserResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Pass as ``cursor`` for the next page; null on the last page.",
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "UserPageResponse",
+        "type": "object"
+      },
       "UserResponse": {
         "properties": {
           "account_status": {
@@ -402,6 +431,103 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/admin/users": {
+      "get": {
+        "description": "Newest first, keyset-paginated. Pass the previous response's ``next_cursor`` as ``cursor``; ``next_cursor`` is null on the last page.",
+        "operationId": "list_users",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "CURSOR_INVALID"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "AUTH_REQUIRED"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "ADMIN_REQUIRED"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Session Cookie": []
+          }
+        ],
+        "summary": "List users (admin)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v1/auth/logout": {
       "post": {
         "description": "Clears the session cookie; always 204, even with no session.",
