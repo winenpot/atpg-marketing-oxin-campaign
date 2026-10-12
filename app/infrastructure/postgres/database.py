@@ -14,11 +14,12 @@ from app.core.config import Settings
 from app.infrastructure.postgres.models import CodeBatchModel
 
 
-def _is_pgbouncer_url(database_url: str) -> bool:
+def is_pgbouncer_url(database_url: str) -> bool:
     """Return True when the URL uses the Supabase transaction pooler (port 6543).
 
     PgBouncer in transaction mode does not support prepared statements; asyncpg
     must have ``statement_cache_size=0`` to avoid 'prepared statement already exists'.
+    Shared with alembic/env.py: migrations need the same connect_args as the app.
     """
     parsed = urlparse(database_url)
     return parsed.port == 6543
@@ -34,7 +35,7 @@ class PostgreSQLAdapter(ReadinessPort):
                 "timezone": "UTC",
             },
         }
-        if _is_pgbouncer_url(settings.database_url):
+        if is_pgbouncer_url(settings.database_url):
             # PgBouncer (transaction mode) does not support named prepared
             # statements; disabling the cache avoids 'already exists' errors.
             connect_args["statement_cache_size"] = 0

@@ -6,10 +6,12 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 from app.core.config import get_settings
+from app.infrastructure.postgres.database import is_pgbouncer_url
 from app.infrastructure.postgres.models import Base
 
 config = context.config
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+database_url = get_settings().database_url
+config.set_main_option("sqlalchemy.url", database_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
@@ -35,10 +37,18 @@ def do_run_migrations(connection: Connection) -> None:
 
 
 async def run_async_migrations() -> None:
+    connect_args: dict[str, object] = {}
+    if is_pgbouncer_url(database_url):
+        # PgBouncer (transaction mode, Supabase port 6543) does not support
+        # named prepared statements -- same fix as the app's own engine
+        # (app/infrastructure/postgres/database.py), or every migration
+        # fails with "prepared statement already exists".
+        connect_args["statement_cache_size"] = 0
     connectable = async_engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args=connect_args,
     )
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
